@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 use std::{
@@ -52,9 +53,6 @@ use crate::{
 /// The executor runs small batches sequentially when the declared batch size is
 /// at or below the configured sequential threshold.
 ///
-/// # Author
-///
-/// Haixing Hu
 #[derive(Clone)]
 pub struct RayonBatchExecutor {
     /// Dedicated Rayon pool used for parallel batch execution.

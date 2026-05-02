@@ -1,18 +1,16 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 //! # Qubit Rayon Batch
 //!
 //! Rayon-backed batch executor implementation.
 //!
-//! # Author
-//!
-//! Haixing Hu
 
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]

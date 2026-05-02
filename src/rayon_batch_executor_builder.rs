@@ -1,9 +1,10 @@
 /*******************************************************************************
  *
- *    Copyright (c) 2025 - 2026.
- *    Haixing Hu, Qubit Co. Ltd.
+ *    Copyright (c) 2025 - 2026 Haixing Hu.
  *
- *    All rights reserved.
+ *    SPDX-License-Identifier: Apache-2.0
+ *
+ *    Licensed under the Apache License, Version 2.0.
  *
  ******************************************************************************/
 use std::{
@@ -26,9 +27,6 @@ const DEFAULT_THREAD_NAME_PREFIX: &str = "qubit-rayon-batch";
 
 /// Builder for [`RayonBatchExecutor`].
 ///
-/// # Author
-///
-/// Haixing Hu
 pub struct RayonBatchExecutorBuilder {
     /// Number of Rayon worker threads to create.
     num_threads: usize,

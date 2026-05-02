@@ -28,6 +28,6 @@ doctest = true
 [dependencies]
 qubit-atomic = "0.10"
 qubit-batch = { path = "../rs-batch", version = "0.3" }
-qubit-function = "0.10"
+qubit-function = "0.11"
 rayon = "1.12"
 thiserror = "2.0"
