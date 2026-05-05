@@ -27,13 +27,13 @@ use std::{
 use qubit_rayon_batch::{
     BatchExecutionError,
     BatchExecutor,
+    ProgressPhase,
     RayonBatchExecutor,
     RayonBatchExecutorBuildError,
 };
 
 use crate::support::{
     PanickingProgressReporter,
-    ProgressEvent,
     ProgressPanicPhase,
     RecordingProgressReporter,
     TestTask,
@@ -109,7 +109,7 @@ fn test_rayon_batch_executor_new_default_and_accessors() {
         executor.report_interval(),
         RayonBatchExecutor::DEFAULT_REPORT_INTERVAL
     );
-    executor.reporter().start(0);
+    assert!(Arc::strong_count(executor.reporter()) >= 1);
     assert!(default_executor.num_threads() >= 1);
 }
 
@@ -221,11 +221,11 @@ fn test_rayon_batch_executor_reports_count_shortfall() {
         BatchExecutionError::CountShortfall {
             expected,
             actual,
-            result,
+            outcome,
         } => {
             assert_eq!(expected, 3);
             assert_eq!(actual, 2);
-            assert_eq!(result.completed_count(), 2);
+            assert_eq!(outcome.completed_count(), 2);
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -248,11 +248,11 @@ fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation()
         BatchExecutionError::CountShortfall {
             expected,
             actual,
-            result,
+            outcome,
         } => {
             assert_eq!(expected, usize::MAX);
             assert_eq!(actual, 1);
-            assert_eq!(result.completed_count(), 1);
+            assert_eq!(outcome.completed_count(), 1);
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -275,11 +275,11 @@ fn test_rayon_batch_executor_reports_count_exceeded() {
         BatchExecutionError::CountExceeded {
             expected,
             observed_at_least,
-            result,
+            outcome,
         } => {
             assert_eq!(expected, 1);
             assert_eq!(observed_at_least, 2);
-            assert_eq!(result.completed_count(), 1);
+            assert_eq!(outcome.completed_count(), 1);
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -306,11 +306,11 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
         BatchExecutionError::CountExceeded {
             expected,
             observed_at_least,
-            result,
+            outcome,
         } => {
             assert_eq!(expected, 2);
             assert_eq!(observed_at_least, 3);
-            assert_eq!(result.completed_count(), 2);
+            assert_eq!(outcome.completed_count(), 2);
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -386,25 +386,25 @@ fn test_rayon_batch_executor_reports_progress() {
     let events = reporter.events();
 
     assert_eq!(result.completed_count(), 4);
-    assert!(matches!(
-        events.first(),
-        Some(ProgressEvent::Start { total_count: 4 })
+    assert!(matches!(events.first(), Some(event)
+        if event.phase() == ProgressPhase::Started
+            && event.counters().total_count() == Some(4)
     ));
-    assert!(events.iter().any(|event| matches!(
-        event,
-        ProgressEvent::Process {
-            total_count: 4,
-            active_count,
-            ..
-        } if *active_count > 0
-    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.phase(), ProgressPhase::Running)
+                && event.counters().total_count() == Some(4)
+                && event.counters().active_count() > 0)
+    );
     assert!(events.iter().all(|event| match event {
-        ProgressEvent::Process { active_count, .. } => *active_count <= 2,
+        event if event.phase() == ProgressPhase::Running => event.counters().active_count() <= 2,
         _ => true,
     }));
-    assert!(matches!(
-        events.last(),
-        Some(ProgressEvent::Finish { total_count: 4, .. })
+    assert!(matches!(events.last(), Some(event)
+        if event.phase() == ProgressPhase::Finished
+            && event.counters().total_count() == Some(4)
+            && event.counters().completed_count() == 4
     ));
 }
 

@@ -21,12 +21,15 @@ mod rayon_batch_executor_builder;
 
 pub use qubit_batch::{
     BatchExecutionError,
-    BatchExecutionResult,
-    BatchExecutionResultBuildError,
     BatchExecutor,
+    BatchOutcome,
+    BatchOutcomeBuildError,
     BatchTaskError,
     BatchTaskFailure,
     NoOpProgressReporter,
+    ProgressCounters,
+    ProgressEvent,
+    ProgressPhase,
     ProgressReporter,
     SequentialBatchExecutor,
 };

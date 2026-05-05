@@ -16,7 +16,6 @@ mod test_task;
 pub use panic_payload::panic_payload_message;
 pub use progress_reporter::{
     PanickingProgressReporter,
-    ProgressEvent,
     ProgressPanicPhase,
     RecordingProgressReporter,
 };

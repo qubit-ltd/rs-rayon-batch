@@ -9,6 +9,7 @@
  ******************************************************************************/
 use std::{
     any::Any,
+    fmt,
     panic::{
         AssertUnwindSafe,
         catch_unwind,
@@ -33,10 +34,13 @@ use std::{
 use qubit_atomic::AtomicCount;
 use qubit_batch::{
     BatchExecutionError,
-    BatchExecutionResult,
     BatchExecutor,
+    BatchOutcome,
     BatchTaskError,
     BatchTaskFailure,
+    ProgressCounters,
+    ProgressEvent,
+    ProgressPhase,
     ProgressReporter,
     SequentialBatchExecutor,
 };
@@ -251,11 +255,11 @@ impl BatchExecutor for RayonBatchExecutor {
         &self,
         tasks: I,
         count: usize,
-    ) -> Result<BatchExecutionResult<E>, BatchExecutionError<E>>
+    ) -> Result<BatchOutcome<E>, BatchExecutionError<E>>
     where
         I: IntoIterator<Item = T>,
         T: Runnable<E> + Send,
-        E: Send,
+        E: Send + fmt::Debug,
     {
         if count <= self.sequential_threshold || self.num_threads <= 1 {
             let sequential = SequentialBatchExecutor::new()
@@ -264,9 +268,14 @@ impl BatchExecutor for RayonBatchExecutor {
             return sequential.execute(tasks, count);
         }
 
-        self.reporter.start(count);
         let progress_state = Arc::new(RayonBatchProgressState::new());
         let result_state = Arc::new(RayonBatchResultState::new());
+        report_batch_progress(
+            self.reporter.as_ref(),
+            ProgressPhase::Started,
+            progress_state.progress_counters(count),
+            Duration::ZERO,
+        );
         let start = Instant::now();
         let reporter = Arc::clone(&self.reporter);
         let reporter_state = Arc::clone(&progress_state);
@@ -308,21 +317,38 @@ impl BatchExecutor for RayonBatchExecutor {
         let completed_count = progress_state.completed_count.get();
         let result = Arc::into_inner(result_state)
             .expect("rayon batch result state should have a single owner")
-            .into_result(count, completed_count, start.elapsed());
-        self.reporter.finish(count, result.elapsed());
+            .into_outcome(count, completed_count, start.elapsed());
         if actual_count < count {
+            report_batch_progress(
+                self.reporter.as_ref(),
+                ProgressPhase::Failed,
+                outcome_progress_counters(&result),
+                result.elapsed(),
+            );
             Err(BatchExecutionError::CountShortfall {
                 expected: count,
                 actual: actual_count,
-                result,
+                outcome: result,
             })
         } else if actual_count > count {
+            report_batch_progress(
+                self.reporter.as_ref(),
+                ProgressPhase::Failed,
+                outcome_progress_counters(&result),
+                result.elapsed(),
+            );
             Err(BatchExecutionError::CountExceeded {
                 expected: count,
                 observed_at_least: actual_count,
-                result,
+                outcome: result,
             })
         } else {
+            report_batch_progress(
+                self.reporter.as_ref(),
+                ProgressPhase::Finished,
+                outcome_progress_counters(&result),
+                result.elapsed(),
+            );
             Ok(result)
         }
     }
@@ -347,6 +373,20 @@ impl RayonBatchProgressState {
             active_count: AtomicCount::zero(),
             completed_count: AtomicCount::zero(),
         }
+    }
+
+    /// Builds generic progress counters from active progress state.
+    ///
+    /// # Parameters
+    ///
+    /// * `total_count` - Declared total task count.
+    /// # Returns
+    ///
+    /// Progress counters suitable for reporter events.
+    fn progress_counters(&self, total_count: usize) -> ProgressCounters {
+        ProgressCounters::new(Some(total_count))
+            .with_active_count(self.active_count.get())
+            .with_completed_count(self.completed_count.get())
     }
 }
 
@@ -388,17 +428,17 @@ impl<E> RayonBatchResultState<E> {
     /// # Returns
     ///
     /// A structured batch execution result.
-    fn into_result(
+    fn into_outcome(
         self,
         task_count: usize,
         completed_count: usize,
         elapsed: Duration,
-    ) -> BatchExecutionResult<E> {
+    ) -> BatchOutcome<E> {
         let failures = self
             .failures
             .into_inner()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        BatchExecutionResult::try_new(
+        BatchOutcome::try_new(
             task_count,
             completed_count,
             self.succeeded_count.get(),
@@ -426,7 +466,7 @@ fn run_rayon_task<T, E>(
     mut task: T,
 ) where
     T: Runnable<E>,
-    E: Send,
+    E: Send + fmt::Debug,
 {
     progress_state.active_count.inc();
     let outcome = catch_unwind(AssertUnwindSafe(|| task.run()));
@@ -475,12 +515,53 @@ fn run_progress_loop(
         match stop_receiver.recv_timeout(report_interval) {
             Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {
-                let completed_count = state.completed_count.get();
-                let active_count = state.active_count.get();
-                reporter.process(total_count, active_count, completed_count, start.elapsed());
+                report_batch_progress(
+                    reporter.as_ref(),
+                    ProgressPhase::Running,
+                    state.progress_counters(total_count),
+                    start.elapsed(),
+                );
             }
         }
     }
+}
+
+/// Emits one batch progress event.
+///
+/// # Parameters
+///
+/// * `reporter` - Reporter receiving the event.
+/// * `phase` - Progress lifecycle phase.
+/// * `counters` - Generic progress counters to carry in the event.
+/// * `elapsed` - Monotonic elapsed duration to carry in the event.
+fn report_batch_progress(
+    reporter: &dyn ProgressReporter,
+    phase: ProgressPhase,
+    counters: ProgressCounters,
+    elapsed: Duration,
+) {
+    let event = ProgressEvent::builder()
+        .phase(phase)
+        .counters(counters)
+        .elapsed(elapsed)
+        .build();
+    reporter.report(&event);
+}
+
+/// Builds generic progress counters from a completed batch outcome.
+///
+/// # Parameters
+///
+/// * `outcome` - Batch outcome containing final task counters.
+///
+/// # Returns
+///
+/// Progress counters suitable for a terminal progress event.
+fn outcome_progress_counters<E>(outcome: &BatchOutcome<E>) -> ProgressCounters {
+    ProgressCounters::new(Some(outcome.task_count()))
+        .with_completed_count(outcome.completed_count())
+        .with_succeeded_count(outcome.succeeded_count())
+        .with_failed_count(outcome.failed_count() + outcome.panicked_count())
 }
 
 /// Acquires the failure list while tolerating poisoned mutexes.
