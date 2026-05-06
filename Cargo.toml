@@ -29,5 +29,6 @@ doctest = true
 qubit-atomic = "0.10"
 qubit-batch = { path = "../rs-batch", version = "0.3" }
 qubit-function = "0.11"
+qubit-progress = "0.2"
 rayon = "1.12"
 thiserror = "2.0"

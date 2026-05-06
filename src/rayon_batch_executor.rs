@@ -39,12 +39,12 @@ use qubit_batch::{
     BatchTaskError,
     BatchTaskFailure,
     ProgressCounters,
-    ProgressEvent,
     ProgressPhase,
     ProgressReporter,
     SequentialBatchExecutor,
 };
 use qubit_function::Runnable;
+use qubit_progress::ProgressRun;
 use rayon::ThreadPool as RayonThreadPool;
 
 use crate::{
@@ -270,20 +270,21 @@ impl BatchExecutor for RayonBatchExecutor {
 
         let progress_state = Arc::new(RayonBatchProgressState::new());
         let result_state = Arc::new(RayonBatchResultState::new());
-        report_batch_progress(
-            self.reporter.as_ref(),
+        let reporter = Arc::clone(&self.reporter);
+        let progress = ProgressRun::new(reporter.as_ref(), self.report_interval);
+        progress.report_with_elapsed(
             ProgressPhase::Started,
             progress_state.progress_counters(count),
             Duration::ZERO,
         );
-        let start = Instant::now();
-        let reporter = Arc::clone(&self.reporter);
+        let start = progress.started_at();
+        let progress_reporter = Arc::clone(&reporter);
         let reporter_state = Arc::clone(&progress_state);
         let report_interval = self.report_interval;
         let (stop_sender, stop_receiver) = mpsc::channel();
         let progress_thread = thread::spawn(move || {
             run_progress_loop(
-                reporter,
+                progress_reporter,
                 reporter_state,
                 count,
                 start,
@@ -315,12 +316,12 @@ impl BatchExecutor for RayonBatchExecutor {
         }
 
         let completed_count = progress_state.completed_count.get();
+        let elapsed = progress.elapsed();
         let result = Arc::into_inner(result_state)
             .expect("rayon batch result state should have a single owner")
-            .into_outcome(count, completed_count, start.elapsed());
+            .into_outcome(count, completed_count, elapsed);
         if actual_count < count {
-            report_batch_progress(
-                self.reporter.as_ref(),
+            progress.report_with_elapsed(
                 ProgressPhase::Failed,
                 outcome_progress_counters(&result),
                 result.elapsed(),
@@ -331,8 +332,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 outcome: result,
             })
         } else if actual_count > count {
-            report_batch_progress(
-                self.reporter.as_ref(),
+            progress.report_with_elapsed(
                 ProgressPhase::Failed,
                 outcome_progress_counters(&result),
                 result.elapsed(),
@@ -343,8 +343,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 outcome: result,
             })
         } else {
-            report_batch_progress(
-                self.reporter.as_ref(),
+            progress.report_with_elapsed(
                 ProgressPhase::Finished,
                 outcome_progress_counters(&result),
                 result.elapsed(),
@@ -511,41 +510,15 @@ fn run_progress_loop(
     report_interval: Duration,
     stop_receiver: Receiver<()>,
 ) {
+    let progress = ProgressRun::from_start(reporter.as_ref(), report_interval, start);
     loop {
-        match stop_receiver.recv_timeout(report_interval) {
+        match stop_receiver.recv_timeout(progress.report_interval()) {
             Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {
-                report_batch_progress(
-                    reporter.as_ref(),
-                    ProgressPhase::Running,
-                    state.progress_counters(total_count),
-                    start.elapsed(),
-                );
+                progress.report_running(state.progress_counters(total_count));
             }
         }
     }
-}
-
-/// Emits one batch progress event.
-///
-/// # Parameters
-///
-/// * `reporter` - Reporter receiving the event.
-/// * `phase` - Progress lifecycle phase.
-/// * `counters` - Generic progress counters to carry in the event.
-/// * `elapsed` - Monotonic elapsed duration to carry in the event.
-fn report_batch_progress(
-    reporter: &dyn ProgressReporter,
-    phase: ProgressPhase,
-    counters: ProgressCounters,
-    elapsed: Duration,
-) {
-    let event = ProgressEvent::builder()
-        .phase(phase)
-        .counters(counters)
-        .elapsed(elapsed)
-        .build();
-    reporter.report(&event);
 }
 
 /// Builds generic progress counters from a completed batch outcome.
