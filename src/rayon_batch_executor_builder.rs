@@ -173,6 +173,7 @@ impl RayonBatchExecutorBuilder {
     ///
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
+    #[inline]
     pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
         RayonBatchExecutor::from_parts(
             self.num_threads,
@@ -191,6 +192,7 @@ impl Default for RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// A builder configured with default Rayon and progress-report settings.
+    #[inline]
     fn default() -> Self {
         Self {
             num_threads: RayonBatchExecutor::default_num_threads(),

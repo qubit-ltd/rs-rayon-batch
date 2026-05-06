@@ -84,6 +84,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// The available CPU parallelism, or `1` if it cannot be detected.
+    #[inline]
     pub fn default_num_threads() -> usize {
         thread::available_parallelism()
             .map(usize::from)
@@ -223,6 +224,7 @@ impl Default for RayonBatchExecutor {
     /// # Panics
     ///
     /// Panics if Rayon rejects the default thread-pool configuration.
+    #[inline]
     fn default() -> Self {
         Self::builder()
             .build()
@@ -360,6 +362,12 @@ struct RayonBatchProgressState {
     active_count: AtomicCount,
     /// Number of completed tasks.
     completed_count: AtomicCount,
+    /// Number of successful tasks.
+    succeeded_count: AtomicCount,
+    /// Number of failed tasks.
+    failed_count: AtomicCount,
+    /// Number of panicked tasks.
+    panicked_count: AtomicCount,
 }
 
 impl RayonBatchProgressState {
@@ -372,6 +380,9 @@ impl RayonBatchProgressState {
         Self {
             active_count: AtomicCount::zero(),
             completed_count: AtomicCount::zero(),
+            succeeded_count: AtomicCount::zero(),
+            failed_count: AtomicCount::zero(),
+            panicked_count: AtomicCount::zero(),
         }
     }
 
@@ -387,6 +398,8 @@ impl RayonBatchProgressState {
         ProgressCounters::new(Some(total_count))
             .with_active_count(self.active_count.get())
             .with_completed_count(self.completed_count.get())
+            .with_succeeded_count(self.succeeded_count.get())
+            .with_failed_count(self.failed_count.get() + self.panicked_count.get())
     }
 }
 
@@ -473,16 +486,19 @@ fn run_rayon_task<T, E>(
     match outcome {
         Ok(Ok(())) => {
             progress_state.completed_count.inc();
+            progress_state.succeeded_count.inc();
             result_state.succeeded_count.inc();
         }
         Ok(Err(error)) => {
             progress_state.completed_count.inc();
+            progress_state.failed_count.inc();
             result_state.failed_count.inc();
             lock_failures(&result_state.failures)
                 .push(BatchTaskFailure::new(index, BatchTaskError::Failed(error)));
         }
         Err(payload) => {
             progress_state.completed_count.inc();
+            progress_state.panicked_count.inc();
             result_state.panicked_count.inc();
             lock_failures(&result_state.failures).push(BatchTaskFailure::new(
                 index,
