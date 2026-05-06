@@ -24,6 +24,7 @@ pub use qubit_batch::{
     BatchExecutor,
     BatchOutcome,
     BatchOutcomeBuildError,
+    BatchOutcomeBuilder,
     BatchTaskError,
     BatchTaskFailure,
     NoOpProgressReporter,

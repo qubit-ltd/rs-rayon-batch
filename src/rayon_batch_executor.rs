@@ -36,6 +36,7 @@ use qubit_batch::{
     BatchExecutionError,
     BatchExecutor,
     BatchOutcome,
+    BatchOutcomeBuilder,
     BatchTaskError,
     BatchTaskFailure,
     ProgressCounters,
@@ -44,7 +45,7 @@ use qubit_batch::{
     SequentialBatchExecutor,
 };
 use qubit_function::Runnable;
-use qubit_progress::ProgressRun;
+use qubit_progress::Progress;
 use rayon::ThreadPool as RayonThreadPool;
 
 use crate::{
@@ -271,7 +272,7 @@ impl BatchExecutor for RayonBatchExecutor {
         let progress_state = Arc::new(RayonBatchProgressState::new());
         let result_state = Arc::new(RayonBatchResultState::new());
         let reporter = Arc::clone(&self.reporter);
-        let progress = ProgressRun::new(reporter.as_ref(), self.report_interval);
+        let progress = Progress::new(reporter.as_ref(), self.report_interval);
         progress.report_with_elapsed(
             ProgressPhase::Started,
             progress_state.progress_counters(count),
@@ -437,16 +438,15 @@ impl<E> RayonBatchResultState<E> {
             .failures
             .into_inner()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        BatchOutcome::try_new(
-            task_count,
-            completed_count,
-            self.succeeded_count.get(),
-            self.failed_count.get(),
-            self.panicked_count.get(),
-            elapsed,
-            failures,
-        )
-        .expect("rayon batch executor should collect consistent counters")
+        BatchOutcomeBuilder::builder(task_count)
+            .completed_count(completed_count)
+            .succeeded_count(self.succeeded_count.get())
+            .failed_count(self.failed_count.get())
+            .panicked_count(self.panicked_count.get())
+            .elapsed(elapsed)
+            .failures(failures)
+            .build()
+            .expect("rayon batch executor should collect consistent counters")
     }
 }
 
@@ -510,7 +510,7 @@ fn run_progress_loop(
     report_interval: Duration,
     stop_receiver: Receiver<()>,
 ) {
-    let progress = ProgressRun::from_start(reporter.as_ref(), report_interval, start);
+    let progress = Progress::from_start(reporter.as_ref(), report_interval, start);
     loop {
         match stop_receiver.recv_timeout(progress.report_interval()) {
             Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
