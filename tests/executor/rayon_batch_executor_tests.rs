@@ -378,14 +378,18 @@ fn test_rayon_batch_executor_reports_progress() {
         .reporter_arc(reporter.clone())
         .build()
         .expect("rayon batch executor should build");
-    let tasks = (0..4)
-        .map(|_| TestTask::sleep_success(Duration::from_millis(60)))
-        .collect::<Vec<_>>();
+    let tasks = vec![
+        TestTask::fail("fast failure"),
+        TestTask::sleep_success(Duration::from_millis(60)),
+        TestTask::succeed(),
+        TestTask::sleep_success(Duration::from_millis(60)),
+    ];
 
     let result = executor.execute(tasks, 4).expect("batch should succeed");
     let events = reporter.events();
 
     assert_eq!(result.completed_count(), 4);
+    assert_eq!(result.failed_count(), 1);
     assert!(matches!(events.first(), Some(event)
         if event.phase() == ProgressPhase::Started
             && event.counters().total_count() == Some(4)
@@ -396,6 +400,12 @@ fn test_rayon_batch_executor_reports_progress() {
             .any(|event| matches!(event.phase(), ProgressPhase::Running)
                 && event.counters().total_count() == Some(4)
                 && event.counters().active_count() > 0)
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.phase(), ProgressPhase::Running)
+                && (event.counters().succeeded_count() > 0 || event.counters().failed_count() > 0))
     );
     assert!(events.iter().all(|event| match event {
         event if event.phase() == ProgressPhase::Running => event.counters().active_count() <= 2,
