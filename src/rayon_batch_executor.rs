@@ -77,7 +77,7 @@ impl RayonBatchExecutor {
     pub const DEFAULT_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
     /// Default sequential fallback threshold.
-    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize = 1;
+    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize = 100;
 
     /// Returns the default Rayon worker-thread count used by the builder.
     ///
