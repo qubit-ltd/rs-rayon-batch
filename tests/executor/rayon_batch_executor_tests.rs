@@ -550,6 +550,29 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
 }
 
 #[test]
+fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_panic() {
+    const PANIC_MESSAGE: &str = "zero interval progress reporter process panic";
+    let executor = RayonBatchExecutor::builder()
+        .num_threads(2)
+        .sequential_threshold(1)
+        .report_interval(Duration::ZERO)
+        .reporter(PanickingProgressReporter::new(
+            ProgressPanicPhase::Process,
+            PANIC_MESSAGE,
+        ))
+        .build()
+        .expect("rayon batch executor should build");
+    let tasks = (0..2)
+        .map(|_| TestTask::sleep_success(Duration::from_millis(10)))
+        .collect::<Vec<_>>();
+
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 2)))
+        .expect_err("zero-interval progress reporter panic should be propagated");
+
+    assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
+}
+
+#[test]
 fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
     const PANIC_MESSAGE: &str = "progress reporter process panic";
     let executor = RayonBatchExecutor::builder()

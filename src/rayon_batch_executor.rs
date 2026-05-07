@@ -283,7 +283,7 @@ impl BatchExecutor for RayonBatchExecutor {
             Duration::ZERO,
         );
         let start = progress.started_at();
-        let mut actual_count = 0usize;
+        let mut observed_count = 0usize;
 
         thread::scope(|thread_scope| {
             let (progress_sender, progress_receiver) = mpsc::channel();
@@ -305,12 +305,11 @@ impl BatchExecutor for RayonBatchExecutor {
             let report_on_worker_completion = self.report_interval.is_zero();
             self.pool.in_place_scope_fifo(|scope| {
                 for task in tasks {
-                    if actual_count == count {
-                        actual_count += 1;
+                    observed_count = state.record_task_observed();
+                    if observed_count > count {
                         break;
                     }
-                    let index = actual_count;
-                    actual_count += 1;
+                    let index = observed_count - 1;
                     let task_state = Arc::clone(&state);
                     let worker_progress_sender = progress_sender.clone();
                     scope.spawn_fifo(move |_| {
@@ -332,7 +331,7 @@ impl BatchExecutor for RayonBatchExecutor {
         let result = Arc::into_inner(state)
             .expect("rayon batch execution state should have a single owner")
             .into_outcome(elapsed);
-        if actual_count < count {
+        if observed_count < count {
             progress.report_with_elapsed(
                 ProgressPhase::Failed,
                 outcome_progress_counters(&result),
@@ -340,10 +339,10 @@ impl BatchExecutor for RayonBatchExecutor {
             );
             Err(BatchExecutionError::CountShortfall {
                 expected: count,
-                actual: actual_count,
+                actual: observed_count,
                 outcome: result,
             })
-        } else if actual_count > count {
+        } else if observed_count > count {
             progress.report_with_elapsed(
                 ProgressPhase::Failed,
                 outcome_progress_counters(&result),
@@ -351,7 +350,7 @@ impl BatchExecutor for RayonBatchExecutor {
             );
             Err(BatchExecutionError::CountExceeded {
                 expected: count,
-                observed_at_least: actual_count,
+                observed_at_least: observed_count,
                 outcome: result,
             })
         } else {

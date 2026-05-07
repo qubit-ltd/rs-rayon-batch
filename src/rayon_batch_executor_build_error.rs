@@ -22,13 +22,6 @@ pub enum RayonBatchExecutorBuildError {
     #[error("rayon batch executor worker stack size must be greater than zero")]
     ZeroStackSize,
 
-    /// Legacy zero progress-report interval validation error.
-    ///
-    /// Current builders accept zero intervals; the variant remains part of the
-    /// public enum for compatibility with earlier releases.
-    #[error("rayon batch executor report interval must be greater than zero")]
-    ZeroReportInterval,
-
     /// Rayon rejected the underlying thread-pool configuration.
     #[error("failed to build rayon batch executor: {source}")]
     BuildFailed {
