@@ -22,8 +22,8 @@ The crate provides:
 - `RayonBatchExecutorBuilder`: configuration for worker count, sequential
   fallback threshold, progress reporting, thread names, and stack size.
 - `RayonBatchExecutorBuildError`: build-time validation and Rayon pool errors.
-- Convenient re-exports for `BatchExecutor`, `BatchExecutionResult`, and
-  `ProgressReporter`.
+- Convenient re-exports for `BatchExecutor`, `BatchCallResult`,
+  `BatchOutcome`, `BatchExecutionState`, and `ProgressReporter`.
 
 ## Features
 
@@ -38,8 +38,8 @@ The crate provides:
 
 ```toml
 [dependencies]
-qubit-batch = "0.3.0"
-qubit-rayon-batch = "0.1.1"
+qubit-batch = "0.4.1"
+qubit-rayon-batch = "0.2.0"
 ```
 
 ## Quick Start

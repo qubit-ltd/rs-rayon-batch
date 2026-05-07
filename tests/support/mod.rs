@@ -11,6 +11,7 @@
 
 mod panic_payload;
 mod progress_reporter;
+mod test_callable;
 mod test_task;
 
 pub use panic_payload::panic_payload_message;
@@ -19,4 +20,5 @@ pub use progress_reporter::{
     ProgressPanicPhase,
     RecordingProgressReporter,
 };
+pub use test_callable::TestCallable;
 pub use test_task::TestTask;

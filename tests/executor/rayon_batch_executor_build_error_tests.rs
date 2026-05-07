@@ -46,21 +46,3 @@ fn test_rayon_batch_executor_build_error_formats_zero_stack_size() {
         "rayon batch executor worker stack size must be greater than zero"
     );
 }
-
-#[test]
-fn test_rayon_batch_executor_build_error_formats_zero_report_interval() {
-    let error = RayonBatchExecutor::builder()
-        .report_interval(std::time::Duration::ZERO)
-        .build()
-        .err()
-        .expect("zero report interval should fail");
-
-    assert!(matches!(
-        error,
-        RayonBatchExecutorBuildError::ZeroReportInterval
-    ));
-    assert_eq!(
-        error.to_string(),
-        "rayon batch executor report interval must be greater than zero"
-    );
-}

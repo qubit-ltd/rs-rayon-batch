@@ -9,7 +9,6 @@
  ******************************************************************************/
 use std::{
     any::Any,
-    fmt,
     panic::{
         AssertUnwindSafe,
         catch_unwind,
@@ -17,7 +16,6 @@ use std::{
     },
     sync::{
         Arc,
-        Mutex,
         mpsc::{
             self,
             Receiver,
@@ -31,27 +29,35 @@ use std::{
     },
 };
 
-use qubit_atomic::AtomicCount;
 use qubit_batch::{
     BatchExecutionError,
+    BatchExecutionState,
     BatchExecutor,
     BatchOutcome,
-    BatchOutcomeBuilder,
     BatchTaskError,
-    BatchTaskFailure,
-    ProgressCounters,
-    ProgressPhase,
-    ProgressReporter,
     SequentialBatchExecutor,
 };
 use qubit_function::Runnable;
-use qubit_progress::Progress;
+use qubit_progress::{
+    Progress,
+    ProgressCounters,
+    ProgressPhase,
+    ProgressReporter,
+};
 use rayon::ThreadPool as RayonThreadPool;
 
 use crate::{
     RayonBatchExecutorBuildError,
     RayonBatchExecutorBuilder,
 };
+
+/// Signal sent to the progress reporter thread.
+enum ProgressLoopSignal {
+    /// A worker reached a running progress point.
+    RunningPoint,
+    /// Execution is complete and the reporter thread should stop.
+    Stop,
+}
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -190,9 +196,6 @@ impl RayonBatchExecutor {
         if num_threads == 0 {
             return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
         }
-        if report_interval.is_zero() {
-            return Err(RayonBatchExecutorBuildError::ZeroReportInterval);
-        }
         if stack_size == Some(0) {
             return Err(RayonBatchExecutorBuildError::ZeroStackSize);
         }
@@ -262,7 +265,7 @@ impl BatchExecutor for RayonBatchExecutor {
     where
         I: IntoIterator<Item = T>,
         T: Runnable<E> + Send,
-        E: Send + fmt::Debug,
+        E: Send,
     {
         if count <= self.sequential_threshold || self.num_threads <= 1 {
             let sequential = SequentialBatchExecutor::new()
@@ -271,58 +274,64 @@ impl BatchExecutor for RayonBatchExecutor {
             return sequential.execute(tasks, count);
         }
 
-        let progress_state = Arc::new(RayonBatchProgressState::new());
-        let result_state = Arc::new(RayonBatchResultState::new());
+        let state = Arc::new(BatchExecutionState::new(count));
         let reporter = Arc::clone(&self.reporter);
         let progress = Progress::new(reporter.as_ref(), self.report_interval);
         progress.report_with_elapsed(
             ProgressPhase::Started,
-            progress_state.progress_counters(count),
+            state.progress_counters(),
             Duration::ZERO,
         );
         let start = progress.started_at();
-        let progress_reporter = Arc::clone(&reporter);
-        let reporter_state = Arc::clone(&progress_state);
-        let report_interval = self.report_interval;
-        let (stop_sender, stop_receiver) = mpsc::channel();
-        let progress_thread = thread::spawn(move || {
-            run_progress_loop(
-                progress_reporter,
-                reporter_state,
-                count,
-                start,
-                report_interval,
-                stop_receiver,
-            );
-        });
-
         let mut actual_count = 0usize;
-        self.pool.in_place_scope_fifo(|scope| {
-            for task in tasks {
-                if actual_count == count {
+
+        thread::scope(|thread_scope| {
+            let (progress_sender, progress_receiver) = mpsc::channel();
+            let progress_thread = {
+                let progress_reporter = Arc::clone(&reporter);
+                let reporter_state = Arc::clone(&state);
+                let report_interval = self.report_interval;
+                thread_scope.spawn(move || {
+                    run_progress_loop(
+                        progress_reporter,
+                        reporter_state,
+                        start,
+                        report_interval,
+                        progress_receiver,
+                    );
+                })
+            };
+
+            let report_on_worker_completion = self.report_interval.is_zero();
+            self.pool.in_place_scope_fifo(|scope| {
+                for task in tasks {
+                    if actual_count == count {
+                        actual_count += 1;
+                        break;
+                    }
+                    let index = actual_count;
                     actual_count += 1;
-                    break;
+                    let task_state = Arc::clone(&state);
+                    let worker_progress_sender = progress_sender.clone();
+                    scope.spawn_fifo(move |_| {
+                        run_rayon_task(task_state, index, task);
+                        if report_on_worker_completion {
+                            let _ = worker_progress_sender.send(ProgressLoopSignal::RunningPoint);
+                        }
+                    });
                 }
-                let index = actual_count;
-                actual_count += 1;
-                let task_progress_state = Arc::clone(&progress_state);
-                let task_result_state = Arc::clone(&result_state);
-                scope.spawn_fifo(move |_| {
-                    run_rayon_task(task_progress_state, task_result_state, index, task);
-                });
+            });
+
+            let _ = progress_sender.send(ProgressLoopSignal::Stop);
+            if let Err(payload) = progress_thread.join() {
+                resume_unwind(payload);
             }
         });
 
-        let _ = stop_sender.send(());
-        if let Err(payload) = progress_thread.join() {
-            resume_unwind(payload);
-        }
-
-        let completed_count = progress_state.completed_count.get();
         let elapsed = progress.elapsed();
-        let result = Arc::into_inner(result_state)
-            .expect("rayon batch result state should have a single owner")
-            .into_outcome(count, completed_count, elapsed);
+        let result = Arc::into_inner(state)
+            .expect("rayon batch execution state should have a single owner")
+            .into_outcome(elapsed);
         if actual_count < count {
             progress.report_with_elapsed(
                 ProgressPhase::Failed,
@@ -356,155 +365,24 @@ impl BatchExecutor for RayonBatchExecutor {
     }
 }
 
-/// Shared progress counters for a running Rayon batch.
-struct RayonBatchProgressState {
-    /// Number of tasks currently running on worker threads.
-    active_count: AtomicCount,
-    /// Number of completed tasks.
-    completed_count: AtomicCount,
-    /// Number of successful tasks.
-    succeeded_count: AtomicCount,
-    /// Number of failed tasks.
-    failed_count: AtomicCount,
-    /// Number of panicked tasks.
-    panicked_count: AtomicCount,
-}
-
-impl RayonBatchProgressState {
-    /// Creates fresh progress state for one Rayon batch execution.
-    ///
-    /// # Returns
-    ///
-    /// Shared state with zeroed counters.
-    fn new() -> Self {
-        Self {
-            active_count: AtomicCount::zero(),
-            completed_count: AtomicCount::zero(),
-            succeeded_count: AtomicCount::zero(),
-            failed_count: AtomicCount::zero(),
-            panicked_count: AtomicCount::zero(),
-        }
-    }
-
-    /// Builds generic progress counters from active progress state.
-    ///
-    /// # Parameters
-    ///
-    /// * `total_count` - Declared total task count.
-    /// # Returns
-    ///
-    /// Progress counters suitable for reporter events.
-    fn progress_counters(&self, total_count: usize) -> ProgressCounters {
-        ProgressCounters::new(Some(total_count))
-            .with_active_count(self.active_count.get())
-            .with_completed_count(self.completed_count.get())
-            .with_succeeded_count(self.succeeded_count.get())
-            .with_failed_count(self.failed_count.get() + self.panicked_count.get())
-    }
-}
-
-/// Shared result counters and failure storage for a running Rayon batch.
-struct RayonBatchResultState<E> {
-    /// Number of successful tasks.
-    succeeded_count: AtomicCount,
-    /// Number of failed tasks.
-    failed_count: AtomicCount,
-    /// Number of panicked tasks.
-    panicked_count: AtomicCount,
-    /// Detailed task failure list.
-    failures: Mutex<Vec<BatchTaskFailure<E>>>,
-}
-
-impl<E> RayonBatchResultState<E> {
-    /// Creates fresh result state for one Rayon batch execution.
-    ///
-    /// # Returns
-    ///
-    /// Shared state with zeroed counters and no recorded failures.
-    fn new() -> Self {
-        Self {
-            succeeded_count: AtomicCount::zero(),
-            failed_count: AtomicCount::zero(),
-            panicked_count: AtomicCount::zero(),
-            failures: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Builds a structured batch result from the collected counters.
-    ///
-    /// # Parameters
-    ///
-    /// * `task_count` - Declared batch task count.
-    /// * `completed_count` - Number of tasks completed by workers.
-    /// * `elapsed` - Total elapsed wall-clock time.
-    ///
-    /// # Returns
-    ///
-    /// A structured batch execution result.
-    fn into_outcome(
-        self,
-        task_count: usize,
-        completed_count: usize,
-        elapsed: Duration,
-    ) -> BatchOutcome<E> {
-        let failures = self
-            .failures
-            .into_inner()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        BatchOutcomeBuilder::builder(task_count)
-            .completed_count(completed_count)
-            .succeeded_count(self.succeeded_count.get())
-            .failed_count(self.failed_count.get())
-            .panicked_count(self.panicked_count.get())
-            .elapsed(elapsed)
-            .failures(failures)
-            .build()
-            .expect("rayon batch executor should collect consistent counters")
-    }
-}
-
 /// Executes one task on a Rayon worker and updates shared statistics.
 ///
 /// # Parameters
 ///
-/// * `progress_state` - Shared progress counters updated by the task.
-/// * `result_state` - Shared result state updated for the task outcome.
+/// * `state` - Shared execution state updated by the task.
 /// * `index` - Zero-based task index within the batch.
 /// * `task` - Runnable task executed on the current Rayon worker.
-fn run_rayon_task<T, E>(
-    progress_state: Arc<RayonBatchProgressState>,
-    result_state: Arc<RayonBatchResultState<E>>,
-    index: usize,
-    mut task: T,
-) where
+fn run_rayon_task<T, E>(state: Arc<BatchExecutionState<E>>, index: usize, mut task: T)
+where
     T: Runnable<E>,
-    E: Send + fmt::Debug,
+    E: Send,
 {
-    progress_state.active_count.inc();
+    state.record_task_started();
     let outcome = catch_unwind(AssertUnwindSafe(|| task.run()));
-    progress_state.active_count.dec();
     match outcome {
-        Ok(Ok(())) => {
-            progress_state.completed_count.inc();
-            progress_state.succeeded_count.inc();
-            result_state.succeeded_count.inc();
-        }
-        Ok(Err(error)) => {
-            progress_state.completed_count.inc();
-            progress_state.failed_count.inc();
-            result_state.failed_count.inc();
-            lock_failures(&result_state.failures)
-                .push(BatchTaskFailure::new(index, BatchTaskError::Failed(error)));
-        }
-        Err(payload) => {
-            progress_state.completed_count.inc();
-            progress_state.panicked_count.inc();
-            result_state.panicked_count.inc();
-            lock_failures(&result_state.failures).push(BatchTaskFailure::new(
-                index,
-                panic_payload_to_error(payload.as_ref()),
-            ));
-        }
+        Ok(Ok(())) => state.record_task_succeeded(),
+        Ok(Err(error)) => state.record_task_failed(index, error),
+        Err(payload) => state.record_task_panicked(index, panic_payload_to_error(payload.as_ref())),
     }
 }
 
@@ -514,27 +392,71 @@ fn run_rayon_task<T, E>(
 ///
 /// * `reporter` - Reporter receiving progress callbacks.
 /// * `state` - Shared batch state read by the reporting loop.
-/// * `total_count` - Declared task count for the batch.
 /// * `start` - Batch start time.
 /// * `report_interval` - Delay between progress callbacks.
-/// * `stop_receiver` - Stop signal receiver used by the caller thread.
-fn run_progress_loop(
+/// * `signal_receiver` - Progress-point and stop signal receiver used by the
+///   caller and worker threads.
+fn run_progress_loop<E>(
     reporter: Arc<dyn ProgressReporter>,
-    state: Arc<RayonBatchProgressState>,
-    total_count: usize,
+    state: Arc<BatchExecutionState<E>>,
     start: Instant,
     report_interval: Duration,
-    stop_receiver: Receiver<()>,
-) {
-    let progress = Progress::from_start(reporter.as_ref(), report_interval, start);
+    signal_receiver: Receiver<ProgressLoopSignal>,
+) where
+    E: Send,
+{
+    let mut progress = Progress::from_start(reporter.as_ref(), report_interval, start);
     loop {
-        match stop_receiver.recv_timeout(progress.report_interval()) {
-            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
-            Err(RecvTimeoutError::Timeout) => {
-                progress.report_running(state.progress_counters(total_count));
+        match receive_progress_signal(&signal_receiver, report_interval) {
+            ProgressLoopWait::Signal(ProgressLoopSignal::RunningPoint) => {
+                progress.report_running_if_due(state.progress_counters());
+            }
+            ProgressLoopWait::Signal(ProgressLoopSignal::Stop) | ProgressLoopWait::Disconnected => {
+                break;
+            }
+            ProgressLoopWait::Timeout => {
+                progress.report_running_if_due(state.progress_counters());
             }
         }
     }
+}
+
+/// Receives one progress-loop signal.
+///
+/// # Parameters
+///
+/// * `signal_receiver` - Signal receiver shared with workers and the caller.
+/// * `report_interval` - Configured progress-report interval.
+///
+/// # Returns
+///
+/// A worker or stop signal, a timeout marker for positive intervals, or a
+/// disconnected marker when all senders have disconnected.
+fn receive_progress_signal(
+    signal_receiver: &Receiver<ProgressLoopSignal>,
+    report_interval: Duration,
+) -> ProgressLoopWait {
+    if report_interval.is_zero() {
+        return match signal_receiver.recv() {
+            Ok(signal) => ProgressLoopWait::Signal(signal),
+            Err(_) => ProgressLoopWait::Disconnected,
+        };
+    }
+    match signal_receiver.recv_timeout(report_interval) {
+        Ok(signal) => ProgressLoopWait::Signal(signal),
+        Err(RecvTimeoutError::Timeout) => ProgressLoopWait::Timeout,
+        Err(RecvTimeoutError::Disconnected) => ProgressLoopWait::Disconnected,
+    }
+}
+
+/// Result of waiting for a progress-loop signal.
+enum ProgressLoopWait {
+    /// A worker or stop signal was received.
+    Signal(ProgressLoopSignal),
+    /// No signal arrived before the positive report interval elapsed.
+    Timeout,
+    /// All senders were dropped.
+    Disconnected,
 }
 
 /// Builds generic progress counters from a completed batch outcome.
@@ -550,24 +472,7 @@ fn outcome_progress_counters<E>(outcome: &BatchOutcome<E>) -> ProgressCounters {
     ProgressCounters::new(Some(outcome.task_count()))
         .with_completed_count(outcome.completed_count())
         .with_succeeded_count(outcome.succeeded_count())
-        .with_failed_count(outcome.failed_count() + outcome.panicked_count())
-}
-
-/// Acquires the failure list while tolerating poisoned mutexes.
-///
-/// # Parameters
-///
-/// * `failures` - Mutex protecting the detailed failure list.
-///
-/// # Returns
-///
-/// A mutex guard for the failure list.
-fn lock_failures<E>(
-    failures: &Mutex<Vec<BatchTaskFailure<E>>>,
-) -> std::sync::MutexGuard<'_, Vec<BatchTaskFailure<E>>> {
-    failures
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .with_failed_count(outcome.failure_count())
 }
 
 /// Converts a panic payload into a batch task panic error.

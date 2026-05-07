@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use qubit_batch::{
+use qubit_progress::{
     NoOpProgressReporter,
     ProgressReporter,
 };
@@ -32,7 +32,7 @@ pub struct RayonBatchExecutorBuilder {
     num_threads: usize,
     /// Maximum batch size that still uses sequential execution.
     sequential_threshold: usize,
-    /// Minimum interval between progress callbacks.
+    /// Minimum interval between due-based running progress callbacks.
     report_interval: Duration,
     /// Reporter receiving batch lifecycle callbacks.
     reporter: Arc<dyn ProgressReporter>,
@@ -78,7 +78,9 @@ impl RayonBatchExecutorBuilder {
     ///
     /// # Parameters
     ///
-    /// * `report_interval` - Minimum interval between progress callbacks.
+    /// * `report_interval` - Minimum interval between due-based running
+    ///   progress callbacks. Use [`Duration::ZERO`] to report at every
+    ///   implementation-defined running progress point.
     ///
     /// # Returns
     ///
