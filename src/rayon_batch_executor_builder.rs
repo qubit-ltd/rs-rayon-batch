@@ -29,17 +29,17 @@ const DEFAULT_THREAD_NAME_PREFIX: &str = "qubit-rayon-batch";
 ///
 pub struct RayonBatchExecutorBuilder {
     /// Number of Rayon worker threads to create.
-    num_threads: usize,
+    pub(crate) thread_count: usize,
     /// Maximum batch size that still uses sequential execution.
-    sequential_threshold: usize,
+    pub(crate) sequential_threshold: usize,
     /// Minimum interval between due-based running progress callbacks.
-    report_interval: Duration,
+    pub(crate) report_interval: Duration,
     /// Reporter receiving batch lifecycle callbacks.
-    reporter: Arc<dyn ProgressReporter>,
+    pub(crate) reporter: Arc<dyn ProgressReporter>,
     /// Prefix used when naming Rayon worker threads.
-    thread_name_prefix: String,
+    pub(crate) thread_name_prefix: String,
     /// Optional worker stack size in bytes.
-    stack_size: Option<usize>,
+    pub(crate) stack_size: Option<usize>,
 }
 
 impl RayonBatchExecutorBuilder {
@@ -47,14 +47,14 @@ impl RayonBatchExecutorBuilder {
     ///
     /// # Parameters
     ///
-    /// * `num_threads` - Number of Rayon worker threads.
+    /// * `thread_count` - Number of Rayon worker threads.
     ///
     /// # Returns
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn num_threads(mut self, num_threads: usize) -> Self {
-        self.num_threads = num_threads;
+    pub fn thread_count(mut self, thread_count: usize) -> Self {
+        self.thread_count = thread_count;
         self
     }
 
@@ -177,14 +177,21 @@ impl RayonBatchExecutorBuilder {
     /// configuration is invalid or Rayon rejects it.
     #[inline]
     pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
-        RayonBatchExecutor::from_parts(
-            self.num_threads,
-            self.sequential_threshold,
-            self.report_interval,
-            self.reporter,
-            self.thread_name_prefix,
-            self.stack_size,
-        )
+        if self.thread_count == 0 {
+            return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
+        }
+        if self.stack_size == Some(0) {
+            return Err(RayonBatchExecutorBuildError::ZeroStackSize);
+        }
+        let prefix = self.thread_name_prefix.clone();
+        let mut builder = rayon::ThreadPoolBuilder::new()
+            .num_threads(self.thread_count)
+            .thread_name(move |index| format!("{prefix}-{index}"));
+        if let Some(stack_size) = self.stack_size {
+            builder = builder.stack_size(stack_size);
+        }
+        let pool = builder.build()?;
+        Ok(RayonBatchExecutor::new_with_rayon(pool, self))
     }
 }
 
@@ -197,7 +204,7 @@ impl Default for RayonBatchExecutorBuilder {
     #[inline]
     fn default() -> Self {
         Self {
-            num_threads: RayonBatchExecutor::default_num_threads(),
+            thread_count: RayonBatchExecutor::default_thread_count(),
             sequential_threshold: RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
             report_interval: RayonBatchExecutor::DEFAULT_REPORT_INTERVAL,
             reporter: Arc::new(NoOpProgressReporter),

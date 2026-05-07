@@ -45,7 +45,7 @@ use crate::support::{
 #[test]
 fn test_rayon_batch_executor_build_rejects_invalid_thread_count() {
     let error = RayonBatchExecutor::builder()
-        .num_threads(0)
+        .thread_count(0)
         .build()
         .err()
         .expect("zero thread count should be rejected");
@@ -80,7 +80,7 @@ fn test_rayon_batch_executor_build_rejects_zero_stack_size() {
 #[test]
 fn test_rayon_batch_executor_build_reports_thread_pool_failure() {
     let error = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .stack_size(usize::MAX)
         .build()
         .err()
@@ -97,8 +97,8 @@ fn test_rayon_batch_executor_new_default_and_accessors() {
     let executor = RayonBatchExecutor::new(2).expect("rayon batch executor should build");
     let default_executor = RayonBatchExecutor::default();
 
-    assert!(RayonBatchExecutor::default_num_threads() >= 1);
-    assert_eq!(executor.num_threads(), 2);
+    assert!(RayonBatchExecutor::default_thread_count() >= 1);
+    assert_eq!(executor.thread_count(), 2);
     assert_eq!(
         executor.sequential_threshold(),
         RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD
@@ -108,13 +108,13 @@ fn test_rayon_batch_executor_new_default_and_accessors() {
         RayonBatchExecutor::DEFAULT_REPORT_INTERVAL
     );
     assert!(Arc::strong_count(executor.reporter()) >= 1);
-    assert!(default_executor.num_threads() >= 1);
+    assert!(default_executor.thread_count() >= 1);
 }
 
 #[test]
 fn test_rayon_batch_executor_builder_custom_options() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(3)
         .report_interval(Duration::from_millis(25))
         .reporter(RecordingProgressReporter::new())
@@ -124,7 +124,7 @@ fn test_rayon_batch_executor_builder_custom_options() {
         .build()
         .expect("rayon batch executor should build with custom options");
 
-    assert_eq!(executor.num_threads(), 2);
+    assert_eq!(executor.thread_count(), 2);
     assert_eq!(executor.sequential_threshold(), 3);
     assert_eq!(executor.report_interval(), Duration::from_millis(25));
 }
@@ -132,7 +132,7 @@ fn test_rayon_batch_executor_builder_custom_options() {
 #[test]
 fn test_rayon_batch_executor_executes_successfully() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -154,7 +154,7 @@ fn test_rayon_batch_executor_executes_successfully() {
 #[test]
 fn test_rayon_batch_executor_for_each_executes_on_rayon_path() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -179,7 +179,7 @@ fn test_rayon_batch_executor_for_each_executes_on_rayon_path() {
 #[test]
 fn test_rayon_batch_executor_supports_non_static_for_each_items() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -199,7 +199,7 @@ fn test_rayon_batch_executor_supports_non_static_for_each_items() {
 #[test]
 fn test_rayon_batch_executor_call_collects_values_by_index() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -225,7 +225,7 @@ fn test_rayon_batch_executor_call_collects_values_by_index() {
 #[test]
 fn test_rayon_batch_executor_call_reports_count_mismatches() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -273,7 +273,7 @@ fn test_rayon_batch_executor_call_reports_count_mismatches() {
 #[test]
 fn test_rayon_batch_executor_collects_failures_and_panics() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -303,7 +303,7 @@ fn test_rayon_batch_executor_collects_failures_and_panics() {
 #[test]
 fn test_rayon_batch_executor_orders_failures_by_task_index() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -324,7 +324,7 @@ fn test_rayon_batch_executor_orders_failures_by_task_index() {
 #[test]
 fn test_rayon_batch_executor_reports_count_shortfall() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -351,7 +351,7 @@ fn test_rayon_batch_executor_reports_count_shortfall() {
 #[test]
 fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -378,7 +378,7 @@ fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation()
 #[test]
 fn test_rayon_batch_executor_reports_count_exceeded() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -405,7 +405,7 @@ fn test_rayon_batch_executor_reports_count_exceeded() {
 #[test]
 fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -436,7 +436,7 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
 #[test]
 fn test_rayon_batch_executor_runs_tasks_concurrently() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
@@ -463,7 +463,7 @@ fn test_rayon_batch_executor_runs_tasks_concurrently() {
 #[test]
 fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(4)
+        .thread_count(4)
         .sequential_threshold(10)
         .build()
         .expect("rayon batch executor should build");
@@ -489,7 +489,7 @@ fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
 fn test_rayon_batch_executor_reports_progress() {
     let reporter = Arc::new(RecordingProgressReporter::new());
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::from_millis(10))
         .reporter_arc(reporter.clone())
@@ -539,7 +539,7 @@ fn test_rayon_batch_executor_reports_progress() {
 fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
     let reporter = Arc::new(RecordingProgressReporter::new());
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::ZERO)
         .reporter_arc(reporter.clone())
@@ -574,7 +574,7 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
 fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exceeded() {
     let reporter = Arc::new(RecordingProgressReporter::new());
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::ZERO)
         .reporter_arc(reporter.clone())
@@ -610,7 +610,7 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
 fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
     const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::ZERO)
         .build()
@@ -632,7 +632,7 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
 fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_panic() {
     const PANIC_MESSAGE: &str = "zero interval progress reporter process panic";
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::ZERO)
         .reporter(PanickingProgressReporter::new(
@@ -655,7 +655,7 @@ fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_p
 fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
     const PANIC_MESSAGE: &str = "progress reporter process panic";
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::from_millis(1))
         .reporter(PanickingProgressReporter::new(
@@ -678,7 +678,7 @@ fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
 fn test_rayon_batch_executor_propagates_progress_reporter_start_panic() {
     const PANIC_MESSAGE: &str = "progress reporter start panic";
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .reporter(PanickingProgressReporter::new(
             ProgressPanicPhase::Start,
@@ -698,7 +698,7 @@ fn test_rayon_batch_executor_propagates_progress_reporter_start_panic() {
 fn test_rayon_batch_executor_propagates_progress_reporter_finish_panic() {
     const PANIC_MESSAGE: &str = "progress reporter finish panic";
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .reporter(PanickingProgressReporter::new(
             ProgressPanicPhase::Finish,

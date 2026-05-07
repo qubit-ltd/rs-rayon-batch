@@ -26,7 +26,7 @@ name = "qubit_rayon_batch"
 doctest = true
 
 [dependencies]
-qubit-batch = "0.4.2"
+qubit-batch = "0.4.3"
 qubit-function = "0.11"
 qubit-progress = "0.3"
 rayon = "1.12"

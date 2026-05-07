@@ -28,7 +28,7 @@ use crate::support::{
 #[test]
 fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(7)
         .report_interval(Duration::from_millis(15))
         .thread_name_prefix(String::from("builder-test-worker"))
@@ -36,7 +36,7 @@ fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
         .build()
         .expect("custom builder settings should build");
 
-    assert_eq!(executor.num_threads(), 2);
+    assert_eq!(executor.thread_count(), 2);
     assert_eq!(executor.sequential_threshold(), 7);
     assert_eq!(executor.report_interval(), Duration::from_millis(15));
 }
@@ -45,7 +45,7 @@ fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
 fn test_rayon_batch_executor_builder_uses_shared_reporter_arc() {
     let reporter = Arc::new(RecordingProgressReporter::new());
     let executor = RayonBatchExecutor::builder()
-        .num_threads(2)
+        .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::from_millis(1))
         .reporter_arc(reporter.clone())
