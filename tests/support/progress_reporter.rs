@@ -12,7 +12,7 @@ use std::{
     sync::Mutex,
 };
 
-use qubit_batch::{
+use qubit_progress::{
     ProgressEvent,
     ProgressPhase,
     ProgressReporter,
