@@ -31,7 +31,7 @@ fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
         .num_threads(2)
         .sequential_threshold(7)
         .report_interval(Duration::from_millis(15))
-        .thread_name_prefix("builder-test-worker")
+        .thread_name_prefix(String::from("builder-test-worker"))
         .stack_size(2 * 1024 * 1024)
         .build()
         .expect("custom builder settings should build");

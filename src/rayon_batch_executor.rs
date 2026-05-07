@@ -8,7 +8,6 @@
  *
  ******************************************************************************/
 use std::{
-    any::Any,
     panic::{
         AssertUnwindSafe,
         catch_unwind,
@@ -16,10 +15,12 @@ use std::{
     },
     sync::{
         Arc,
+        Mutex,
         mpsc::{
             self,
             Receiver,
             RecvTimeoutError,
+            Sender,
         },
     },
     thread,
@@ -57,6 +58,14 @@ enum ProgressLoopSignal {
     RunningPoint,
     /// Execution is complete and the reporter thread should stop.
     Stop,
+}
+
+/// Indexed task sent to Rayon worker loops.
+struct RayonWorkItem<T> {
+    /// Zero-based task index within the declared batch.
+    index: usize,
+    /// Task payload.
+    task: T,
 }
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
@@ -284,6 +293,7 @@ impl BatchExecutor for RayonBatchExecutor {
         );
         let start = progress.started_at();
         let mut observed_count = 0usize;
+        let worker_count = self.num_threads.min(count);
 
         thread::scope(|thread_scope| {
             let (progress_sender, progress_receiver) = mpsc::channel();
@@ -302,23 +312,39 @@ impl BatchExecutor for RayonBatchExecutor {
                 })
             };
 
-            let report_on_worker_completion = self.report_interval.is_zero();
+            let worker_progress_sender = self
+                .report_interval
+                .is_zero()
+                .then(|| progress_sender.clone());
             self.pool.in_place_scope_fifo(|scope| {
+                let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
+                let work_receiver = Arc::new(Mutex::new(work_receiver));
+                for _ in 0..worker_count {
+                    let worker_receiver = Arc::clone(&work_receiver);
+                    let worker_state = Arc::clone(&state);
+                    let worker_progress_sender = worker_progress_sender.clone();
+                    scope.spawn_fifo(move |_| {
+                        run_rayon_worker(worker_receiver, worker_state, worker_progress_sender);
+                    });
+                }
+                drop(work_receiver);
+
                 for task in tasks {
                     observed_count = state.record_task_observed();
                     if observed_count > count {
                         break;
                     }
-                    let index = observed_count - 1;
-                    let task_state = Arc::clone(&state);
-                    let worker_progress_sender = progress_sender.clone();
-                    scope.spawn_fifo(move |_| {
-                        run_rayon_task(task_state, index, task);
-                        if report_on_worker_completion {
-                            let _ = worker_progress_sender.send(ProgressLoopSignal::RunningPoint);
-                        }
-                    });
+                    if work_sender
+                        .send(RayonWorkItem {
+                            index: observed_count - 1,
+                            task,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
+                drop(work_sender);
             });
 
             let _ = progress_sender.send(ProgressLoopSignal::Stop);
@@ -364,6 +390,37 @@ impl BatchExecutor for RayonBatchExecutor {
     }
 }
 
+/// Runs Rayon work items until the producer closes the work channel.
+///
+/// # Parameters
+///
+/// * `work_receiver` - Shared task receiver protected because standard receivers
+///   are not `Sync`.
+/// * `state` - Shared execution state updated by each task.
+/// * `progress_sender` - Optional progress-point sender used for zero intervals.
+fn run_rayon_worker<T, E>(
+    work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
+    state: Arc<BatchExecutionState<E>>,
+    progress_sender: Option<Sender<ProgressLoopSignal>>,
+) where
+    T: Runnable<E> + Send,
+    E: Send,
+{
+    loop {
+        let received = work_receiver
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .recv();
+        let Ok(RayonWorkItem { index, task }) = received else {
+            break;
+        };
+        run_rayon_task(&state, index, task);
+        if let Some(progress_sender) = progress_sender.as_ref() {
+            let _ = progress_sender.send(ProgressLoopSignal::RunningPoint);
+        }
+    }
+}
+
 /// Executes one task on a Rayon worker and updates shared statistics.
 ///
 /// # Parameters
@@ -371,7 +428,7 @@ impl BatchExecutor for RayonBatchExecutor {
 /// * `state` - Shared execution state updated by the task.
 /// * `index` - Zero-based task index within the batch.
 /// * `task` - Runnable task executed on the current Rayon worker.
-fn run_rayon_task<T, E>(state: Arc<BatchExecutionState<E>>, index: usize, mut task: T)
+fn run_rayon_task<T, E>(state: &BatchExecutionState<E>, index: usize, mut task: T)
 where
     T: Runnable<E>,
     E: Send,
@@ -381,7 +438,9 @@ where
     match outcome {
         Ok(Ok(())) => state.record_task_succeeded(),
         Ok(Err(error)) => state.record_task_failed(index, error),
-        Err(payload) => state.record_task_panicked(index, panic_payload_to_error(payload.as_ref())),
+        Err(payload) => {
+            state.record_task_panicked(index, BatchTaskError::from_panic_payload(payload.as_ref()));
+        }
     }
 }
 
@@ -472,38 +531,4 @@ fn outcome_progress_counters<E>(outcome: &BatchOutcome<E>) -> ProgressCounters {
         .with_completed_count(outcome.completed_count())
         .with_succeeded_count(outcome.succeeded_count())
         .with_failed_count(outcome.failure_count())
-}
-
-/// Converts a panic payload into a batch task panic error.
-///
-/// # Parameters
-///
-/// * `payload` - Panic payload captured by `catch_unwind`.
-///
-/// # Returns
-///
-/// A panicked task error containing a string message when the payload carries
-/// one.
-fn panic_payload_to_error<E>(payload: &(dyn Any + Send)) -> BatchTaskError<E> {
-    match panic_payload_message(payload) {
-        Some(message) => BatchTaskError::panicked(message),
-        None => BatchTaskError::panicked_without_message(),
-    }
-}
-
-/// Extracts a readable panic message from a panic payload.
-///
-/// # Parameters
-///
-/// * `payload` - Panic payload captured by `catch_unwind`.
-///
-/// # Returns
-///
-/// A cloned panic message when `payload` is `&'static str` or `String`.
-fn panic_payload_message(payload: &(dyn Any + Send)) -> Option<String> {
-    if let Some(message) = payload.downcast_ref::<&'static str>() {
-        Some((*message).to_owned())
-    } else {
-        payload.downcast_ref::<String>().cloned()
-    }
 }

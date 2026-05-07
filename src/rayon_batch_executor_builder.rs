@@ -145,8 +145,8 @@ impl RayonBatchExecutorBuilder {
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn thread_name_prefix(mut self, thread_name_prefix: &str) -> Self {
-        self.thread_name_prefix = thread_name_prefix.to_owned();
+    pub fn thread_name_prefix(mut self, thread_name_prefix: impl Into<String>) -> Self {
+        self.thread_name_prefix = thread_name_prefix.into();
         self
     }
 
