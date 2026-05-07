@@ -13,6 +13,7 @@ use std::{
     panic::{
         AssertUnwindSafe,
         catch_unwind,
+        panic_any,
     },
     sync::{
         Arc,
@@ -173,6 +174,26 @@ fn test_rayon_batch_executor_for_each_executes_on_rayon_path() {
     assert_eq!(counter.load(Ordering::Acquire), 8);
     assert_eq!(outcome.completed_count(), 8);
     assert_eq!(outcome.succeeded_count(), 8);
+}
+
+#[test]
+fn test_rayon_batch_executor_supports_non_static_for_each_items() {
+    let executor = RayonBatchExecutor::builder()
+        .num_threads(2)
+        .sequential_threshold(1)
+        .build()
+        .expect("rayon batch executor should build");
+    let values = [1, 2, 3, 4];
+
+    let outcome = executor
+        .for_each(values.iter(), values.len(), |value| {
+            assert!(*value > 0);
+            Ok::<(), &'static str>(())
+        })
+        .expect("borrowed items should be accepted by the scoped rayon path");
+
+    assert_eq!(outcome.completed_count(), values.len());
+    assert_eq!(outcome.succeeded_count(), values.len());
 }
 
 #[test]
@@ -547,6 +568,64 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
             && event.counters().completed_count() == 3
             && event.counters().failed_count() == 1
     ));
+}
+
+#[test]
+fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exceeded() {
+    let reporter = Arc::new(RecordingProgressReporter::new());
+    let executor = RayonBatchExecutor::builder()
+        .num_threads(2)
+        .sequential_threshold(1)
+        .report_interval(Duration::ZERO)
+        .reporter_arc(reporter.clone())
+        .build()
+        .expect("rayon batch executor should build");
+    let tasks = vec![
+        TestTask::succeed(),
+        TestTask::succeed(),
+        TestTask::succeed(),
+    ];
+
+    let error = executor
+        .execute(tasks, 2)
+        .expect_err("overflow should be reported");
+    let events = reporter.events();
+
+    assert!(matches!(
+        error,
+        BatchExecutionError::CountExceeded {
+            expected: 2,
+            observed_at_least: 3,
+            ..
+        }
+    ));
+    assert!(matches!(events.last(), Some(event)
+        if event.phase() == ProgressPhase::Failed
+            && event.counters().total_count() == Some(2)
+            && event.counters().completed_count() == 2
+    ));
+}
+
+#[test]
+fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
+    const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
+    let executor = RayonBatchExecutor::builder()
+        .num_threads(2)
+        .sequential_threshold(1)
+        .report_interval(Duration::ZERO)
+        .build()
+        .expect("rayon batch executor should build");
+    let tasks = (0..3).map(|index| {
+        if index == 1 {
+            panic_any(PANIC_MESSAGE);
+        }
+        TestTask::sleep_success(Duration::from_millis(5))
+    });
+
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 3)))
+        .expect_err("iterator panic should be propagated");
+
+    assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
 }
 
 #[test]
