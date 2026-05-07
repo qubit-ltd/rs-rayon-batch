@@ -38,8 +38,8 @@ The crate provides:
 
 ```toml
 [dependencies]
-qubit-batch = "0.4.3"
-qubit-rayon-batch = "0.3.1"
+qubit-batch = "0.4.4"
+qubit-rayon-batch = "0.3.2"
 ```
 
 ## Quick Start

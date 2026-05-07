@@ -20,15 +20,10 @@ use std::{
         mpsc::{
             self,
             Receiver,
-            RecvTimeoutError,
-            Sender,
         },
     },
     thread,
-    time::{
-        Duration,
-        Instant,
-    },
+    time::Duration,
 };
 
 use qubit_batch::{
@@ -44,6 +39,8 @@ use qubit_progress::{
     Progress,
     ProgressPhase,
     ProgressReporter,
+    RunningProgressLoop,
+    RunningProgressNotifier,
 };
 use rayon::ThreadPool as RayonThreadPool;
 
@@ -51,14 +48,6 @@ use crate::{
     RayonBatchExecutorBuildError,
     RayonBatchExecutorBuilder,
 };
-
-/// Signal sent to the progress reporter thread.
-enum ProgressLoopSignal {
-    /// A worker reached a running progress point.
-    RunningPoint,
-    /// Execution is complete and the reporter thread should stop.
-    Stop,
-}
 
 /// Indexed task sent to Rayon worker loops.
 struct RayonWorkItem<T> {
@@ -277,26 +266,22 @@ impl BatchExecutor for RayonBatchExecutor {
         let worker_count = self.thread_count.min(count);
 
         thread::scope(|thread_scope| {
-            let (progress_sender, progress_receiver) = mpsc::channel();
+            let (progress_loop, progress_notifier) = RunningProgressLoop::channel();
             let progress_thread = {
                 let progress_reporter = Arc::clone(&reporter);
                 let reporter_state = Arc::clone(&state);
                 let report_interval = self.report_interval;
                 thread_scope.spawn(move || {
-                    run_progress_loop(
-                        progress_reporter,
-                        reporter_state,
-                        start,
-                        report_interval,
-                        progress_receiver,
-                    );
+                    let progress =
+                        Progress::from_start(progress_reporter.as_ref(), report_interval, start);
+                    progress_loop.run(progress, || reporter_state.progress_counters());
                 })
             };
 
             let worker_progress_sender = self
                 .report_interval
                 .is_zero()
-                .then(|| progress_sender.clone());
+                .then(|| progress_notifier.clone());
             self.pool.in_place_scope_fifo(|scope| {
                 let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                 let work_receiver = Arc::new(Mutex::new(work_receiver));
@@ -328,7 +313,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 drop(work_sender);
             });
 
-            let _ = progress_sender.send(ProgressLoopSignal::Stop);
+            progress_notifier.stop();
             if let Err(payload) = progress_thread.join() {
                 resume_unwind(payload);
             }
@@ -382,7 +367,7 @@ impl BatchExecutor for RayonBatchExecutor {
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
     state: Arc<BatchExecutionState<E>>,
-    progress_sender: Option<Sender<ProgressLoopSignal>>,
+    progress_sender: Option<RunningProgressNotifier>,
 ) where
     T: Runnable<E> + Send,
     E: Send,
@@ -397,7 +382,7 @@ fn run_rayon_worker<T, E>(
         };
         run_rayon_task(&state, index, task);
         if let Some(progress_sender) = progress_sender.as_ref() {
-            let _ = progress_sender.send(ProgressLoopSignal::RunningPoint);
+            progress_sender.running_point();
         }
     }
 }
@@ -423,77 +408,4 @@ where
             state.record_task_panicked(index, BatchTaskError::from_panic_payload(payload.as_ref()));
         }
     }
-}
-
-/// Runs the periodic progress loop for one Rayon batch execution.
-///
-/// # Parameters
-///
-/// * `reporter` - Reporter receiving progress callbacks.
-/// * `state` - Shared batch state read by the reporting loop.
-/// * `start` - Batch start time.
-/// * `report_interval` - Delay between progress callbacks.
-/// * `signal_receiver` - Progress-point and stop signal receiver used by the
-///   caller and worker threads.
-fn run_progress_loop<E>(
-    reporter: Arc<dyn ProgressReporter>,
-    state: Arc<BatchExecutionState<E>>,
-    start: Instant,
-    report_interval: Duration,
-    signal_receiver: Receiver<ProgressLoopSignal>,
-) where
-    E: Send,
-{
-    let mut progress = Progress::from_start(reporter.as_ref(), report_interval, start);
-    loop {
-        match receive_progress_signal(&signal_receiver, report_interval) {
-            ProgressLoopWait::Signal(ProgressLoopSignal::RunningPoint) => {
-                progress.report_running_if_due(state.progress_counters());
-            }
-            ProgressLoopWait::Signal(ProgressLoopSignal::Stop) | ProgressLoopWait::Disconnected => {
-                break;
-            }
-            ProgressLoopWait::Timeout => {
-                progress.report_running_if_due(state.progress_counters());
-            }
-        }
-    }
-}
-
-/// Receives one progress-loop signal.
-///
-/// # Parameters
-///
-/// * `signal_receiver` - Signal receiver shared with workers and the caller.
-/// * `report_interval` - Configured progress-report interval.
-///
-/// # Returns
-///
-/// A worker or stop signal, a timeout marker for positive intervals, or a
-/// disconnected marker when all senders have disconnected.
-fn receive_progress_signal(
-    signal_receiver: &Receiver<ProgressLoopSignal>,
-    report_interval: Duration,
-) -> ProgressLoopWait {
-    if report_interval.is_zero() {
-        return match signal_receiver.recv() {
-            Ok(signal) => ProgressLoopWait::Signal(signal),
-            Err(_) => ProgressLoopWait::Disconnected,
-        };
-    }
-    match signal_receiver.recv_timeout(report_interval) {
-        Ok(signal) => ProgressLoopWait::Signal(signal),
-        Err(RecvTimeoutError::Timeout) => ProgressLoopWait::Timeout,
-        Err(RecvTimeoutError::Disconnected) => ProgressLoopWait::Disconnected,
-    }
-}
-
-/// Result of waiting for a progress-loop signal.
-enum ProgressLoopWait {
-    /// A worker or stop signal was received.
-    Signal(ProgressLoopSignal),
-    /// No signal arrived before the positive report interval elapsed.
-    Timeout,
-    /// All senders were dropped.
-    Disconnected,
 }
