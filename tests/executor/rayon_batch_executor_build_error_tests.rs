@@ -17,7 +17,7 @@ use qubit_rayon_batch::{
 #[test]
 fn test_rayon_batch_executor_build_error_formats_zero_thread_count() {
     let error = RayonBatchExecutor::builder()
-        .num_threads(0)
+        .thread_count(0)
         .build()
         .err()
         .expect("zero thread count should fail");

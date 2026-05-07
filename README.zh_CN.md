@@ -36,7 +36,7 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 
 ```toml
 [dependencies]
-qubit-batch = "0.4.2"
+qubit-batch = "0.4.3"
 qubit-rayon-batch = "0.3.1"
 ```
 
@@ -49,7 +49,7 @@ use qubit_rayon_batch::{
 };
 
 let executor = RayonBatchExecutor::builder()
-    .num_threads(4)
+    .thread_count(4)
     .sequential_threshold(1)
     .build()
     .expect("rayon batch executor should be created");

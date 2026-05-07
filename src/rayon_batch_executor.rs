@@ -16,6 +16,7 @@ use std::{
     sync::{
         Arc,
         Mutex,
+        PoisonError,
         mpsc::{
             self,
             Receiver,
@@ -41,7 +42,6 @@ use qubit_batch::{
 use qubit_function::Runnable;
 use qubit_progress::{
     Progress,
-    ProgressCounters,
     ProgressPhase,
     ProgressReporter,
 };
@@ -78,7 +78,7 @@ pub struct RayonBatchExecutor {
     /// Dedicated Rayon pool used for parallel batch execution.
     pool: Arc<RayonThreadPool>,
     /// Number of Rayon worker threads configured for this executor.
-    num_threads: usize,
+    thread_count: usize,
     /// Maximum batch size that still uses sequential execution.
     sequential_threshold: usize,
     /// Interval between progress callbacks while a batch is running.
@@ -100,7 +100,7 @@ impl RayonBatchExecutor {
     ///
     /// The available CPU parallelism, or `1` if it cannot be detected.
     #[inline]
-    pub fn default_num_threads() -> usize {
+    pub fn default_thread_count() -> usize {
         thread::available_parallelism()
             .map(usize::from)
             .unwrap_or(1)
@@ -120,7 +120,7 @@ impl RayonBatchExecutor {
     ///
     /// # Parameters
     ///
-    /// * `num_threads` - Number of Rayon worker threads to create.
+    /// * `thread_count` - Number of Rayon worker threads to create.
     ///
     /// # Returns
     ///
@@ -131,8 +131,39 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(num_threads: usize) -> Result<Self, RayonBatchExecutorBuildError> {
-        Self::builder().num_threads(num_threads).build()
+    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
+        Self::builder().thread_count(thread_count).build()
+    }
+
+    /// Crate-private executor built from an existing Rayon pool and a consumed
+    /// [`RayonBatchExecutorBuilder`].
+    ///
+    /// `thread_name_prefix` and `stack_size` on `builder` are ignored here;
+    /// those apply only while constructing the Rayon pool upstream.
+    ///
+    /// # Parameters
+    ///
+    /// * `pool` - Pre-built Rayon thread pool consumed and wrapped by this
+    ///   executor.
+    /// * `builder` - Consumed builder carrying the validated executor
+    ///   configuration (`thread_count`, `sequential_threshold`,
+    ///   `report_interval`, and `reporter`).
+    ///
+    /// # Returns
+    ///
+    /// A new [`RayonBatchExecutor`] using the supplied pool and configuration.
+    #[inline]
+    pub(crate) fn new_with_rayon(
+        pool: RayonThreadPool,
+        builder: RayonBatchExecutorBuilder,
+    ) -> Self {
+        Self {
+            pool: Arc::new(pool),
+            thread_count: builder.thread_count,
+            sequential_threshold: builder.sequential_threshold,
+            report_interval: builder.report_interval,
+            reporter: builder.reporter,
+        }
     }
 
     /// Returns the configured Rayon worker-thread count.
@@ -141,8 +172,8 @@ impl RayonBatchExecutor {
     ///
     /// The configured worker-thread count.
     #[inline]
-    pub const fn num_threads(&self) -> usize {
-        self.num_threads
+    pub const fn thread_count(&self) -> usize {
+        self.thread_count
     }
 
     /// Returns the configured sequential fallback threshold.
@@ -173,56 +204,6 @@ impl RayonBatchExecutor {
     #[inline]
     pub fn reporter(&self) -> &Arc<dyn ProgressReporter> {
         &self.reporter
-    }
-
-    /// Builds a Rayon batch executor from validated configuration.
-    ///
-    /// # Parameters
-    ///
-    /// * `num_threads` - Number of Rayon worker threads to create.
-    /// * `sequential_threshold` - Sequential fallback threshold.
-    /// * `report_interval` - Minimum interval between progress callbacks.
-    /// * `reporter` - Reporter receiving batch lifecycle callbacks.
-    /// * `thread_name_prefix` - Prefix used when naming Rayon workers.
-    /// * `stack_size` - Optional worker stack size in bytes.
-    ///
-    /// # Returns
-    ///
-    /// A configured Rayon batch executor.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`RayonBatchExecutorBuildError`] when the supplied
-    /// configuration is invalid or Rayon rejects it.
-    pub(crate) fn from_parts(
-        num_threads: usize,
-        sequential_threshold: usize,
-        report_interval: Duration,
-        reporter: Arc<dyn ProgressReporter>,
-        thread_name_prefix: String,
-        stack_size: Option<usize>,
-    ) -> Result<Self, RayonBatchExecutorBuildError> {
-        if num_threads == 0 {
-            return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
-        }
-        if stack_size == Some(0) {
-            return Err(RayonBatchExecutorBuildError::ZeroStackSize);
-        }
-        let prefix = thread_name_prefix;
-        let mut builder = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .thread_name(move |index| format!("{prefix}-{index}"));
-        if let Some(stack_size) = stack_size {
-            builder = builder.stack_size(stack_size);
-        }
-        let pool = Arc::new(builder.build()?);
-        Ok(Self {
-            pool,
-            num_threads,
-            sequential_threshold,
-            report_interval,
-            reporter,
-        })
     }
 }
 
@@ -276,7 +257,7 @@ impl BatchExecutor for RayonBatchExecutor {
         T: Runnable<E> + Send,
         E: Send,
     {
-        if count <= self.sequential_threshold || self.num_threads <= 1 {
+        if count <= self.sequential_threshold || self.thread_count <= 1 {
             let sequential = SequentialBatchExecutor::new()
                 .with_report_interval(self.report_interval)
                 .with_reporter_arc(Arc::clone(&self.reporter));
@@ -293,7 +274,7 @@ impl BatchExecutor for RayonBatchExecutor {
         );
         let start = progress.started_at();
         let mut observed_count = 0usize;
-        let worker_count = self.num_threads.min(count);
+        let worker_count = self.thread_count.min(count);
 
         thread::scope(|thread_scope| {
             let (progress_sender, progress_receiver) = mpsc::channel();
@@ -360,7 +341,7 @@ impl BatchExecutor for RayonBatchExecutor {
         if observed_count < count {
             progress.report_with_elapsed(
                 ProgressPhase::Failed,
-                outcome_progress_counters(&result),
+                result.progress_counters(),
                 result.elapsed(),
             );
             Err(BatchExecutionError::CountShortfall {
@@ -371,7 +352,7 @@ impl BatchExecutor for RayonBatchExecutor {
         } else if observed_count > count {
             progress.report_with_elapsed(
                 ProgressPhase::Failed,
-                outcome_progress_counters(&result),
+                result.progress_counters(),
                 result.elapsed(),
             );
             Err(BatchExecutionError::CountExceeded {
@@ -382,7 +363,7 @@ impl BatchExecutor for RayonBatchExecutor {
         } else {
             progress.report_with_elapsed(
                 ProgressPhase::Finished,
-                outcome_progress_counters(&result),
+                result.progress_counters(),
                 result.elapsed(),
             );
             Ok(result)
@@ -409,7 +390,7 @@ fn run_rayon_worker<T, E>(
     loop {
         let received = work_receiver
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .recv();
         let Ok(RayonWorkItem { index, task }) = received else {
             break;
@@ -515,20 +496,4 @@ enum ProgressLoopWait {
     Timeout,
     /// All senders were dropped.
     Disconnected,
-}
-
-/// Builds generic progress counters from a completed batch outcome.
-///
-/// # Parameters
-///
-/// * `outcome` - Batch outcome containing final task counters.
-///
-/// # Returns
-///
-/// Progress counters suitable for a terminal progress event.
-fn outcome_progress_counters<E>(outcome: &BatchOutcome<E>) -> ProgressCounters {
-    ProgressCounters::new(Some(outcome.task_count()))
-        .with_completed_count(outcome.completed_count())
-        .with_succeeded_count(outcome.succeeded_count())
-        .with_failed_count(outcome.failure_count())
 }
