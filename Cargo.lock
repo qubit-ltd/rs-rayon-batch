@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-batch"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "crossbeam-queue",
  "qubit-atomic",
@@ -161,14 +161,16 @@ dependencies = [
 
 [[package]]
 name = "qubit-progress"
-version = "0.3.3"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e175e8102182224e2a7c18bca4a02d142674277120e35be5e7521bdff168300"
 dependencies = [
  "log",
 ]
 
 [[package]]
 name = "qubit-rayon-batch"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "qubit-batch",
  "qubit-function",
