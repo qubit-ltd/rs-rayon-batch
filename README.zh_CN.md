@@ -36,8 +36,8 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 
 ```toml
 [dependencies]
-qubit-batch = "0.4.4"
-qubit-rayon-batch = "0.3.2"
+qubit-batch = "0.4.5"
+qubit-rayon-batch = "0.3.3"
 ```
 
 ## 快速开始
