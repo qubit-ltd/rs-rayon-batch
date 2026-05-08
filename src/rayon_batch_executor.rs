@@ -11,7 +11,6 @@ use std::{
     panic::{
         AssertUnwindSafe,
         catch_unwind,
-        resume_unwind,
     },
     sync::{
         Arc,
@@ -40,7 +39,7 @@ use qubit_progress::{
     ProgressPhase,
     ProgressReporter,
     RunningProgressLoop,
-    RunningProgressNotifier,
+    RunningProgressPoints,
 };
 use rayon::ThreadPool as RayonThreadPool;
 
@@ -266,31 +265,23 @@ impl BatchExecutor for RayonBatchExecutor {
         let worker_count = self.thread_count.min(count);
 
         thread::scope(|thread_scope| {
-            let (progress_loop, progress_notifier) = RunningProgressLoop::channel();
-            let progress_thread = {
-                let progress_reporter = Arc::clone(&reporter);
-                let reporter_state = Arc::clone(&state);
-                let report_interval = self.report_interval;
-                thread_scope.spawn(move || {
-                    let progress =
-                        Progress::from_start(progress_reporter.as_ref(), report_interval, start);
-                    progress_loop.run(progress, || reporter_state.progress_counters());
-                })
-            };
+            let reporter_state = Arc::clone(&state);
+            let progress = Progress::from_start(reporter.as_ref(), self.report_interval, start);
+            let running_progress =
+                RunningProgressLoop::spawn_scoped(thread_scope, progress, move || {
+                    reporter_state.progress_counters()
+                });
+            let worker_progress_points = running_progress.points();
 
-            let worker_progress_sender = self
-                .report_interval
-                .is_zero()
-                .then(|| progress_notifier.clone());
             self.pool.in_place_scope_fifo(|scope| {
                 let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                 let work_receiver = Arc::new(Mutex::new(work_receiver));
                 for _ in 0..worker_count {
                     let worker_receiver = Arc::clone(&work_receiver);
                     let worker_state = Arc::clone(&state);
-                    let worker_progress_sender = worker_progress_sender.clone();
+                    let worker_progress_points = worker_progress_points.clone();
                     scope.spawn_fifo(move |_| {
-                        run_rayon_worker(worker_receiver, worker_state, worker_progress_sender);
+                        run_rayon_worker(worker_receiver, worker_state, worker_progress_points);
                     });
                 }
                 drop(work_receiver);
@@ -313,10 +304,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 drop(work_sender);
             });
 
-            progress_notifier.stop();
-            if let Err(payload) = progress_thread.join() {
-                resume_unwind(payload);
-            }
+            running_progress.stop_and_join();
         });
 
         let elapsed = progress.elapsed();
@@ -363,11 +351,11 @@ impl BatchExecutor for RayonBatchExecutor {
 /// * `work_receiver` - Shared task receiver protected because standard receivers
 ///   are not `Sync`.
 /// * `state` - Shared execution state updated by each task.
-/// * `progress_sender` - Optional progress-point sender used for zero intervals.
+/// * `progress_points` - Worker-side progress-point handle.
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
     state: Arc<BatchExecutionState<E>>,
-    progress_sender: Option<RunningProgressNotifier>,
+    progress_points: RunningProgressPoints,
 ) where
     T: Runnable<E> + Send,
     E: Send,
@@ -381,9 +369,7 @@ fn run_rayon_worker<T, E>(
             break;
         };
         run_rayon_task(&state, index, task);
-        if let Some(progress_sender) = progress_sender.as_ref() {
-            progress_sender.running_point();
-        }
+        progress_points.running_point();
     }
 }
 

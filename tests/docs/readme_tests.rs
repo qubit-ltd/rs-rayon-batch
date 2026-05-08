@@ -12,6 +12,7 @@
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const README_EN: &str = include_str!("../../README.md");
 const README_ZH: &str = include_str!("../../README.zh_CN.md");
+const RAYON_BATCH_EXECUTOR: &str = include_str!("../../src/rayon_batch_executor.rs");
 
 #[test]
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
@@ -31,6 +32,13 @@ fn test_readme_dependency_version_matches_cargo_toml() {
 fn test_readme_mentions_current_executor_type() {
     assert!(README_EN.contains("RayonBatchExecutor"));
     assert!(README_ZH.contains("RayonBatchExecutor"));
+}
+
+#[test]
+/// Ensures Rayon progress reporting uses the shared scoped progress guard.
+fn test_rayon_progress_reporting_uses_scoped_progress_guard() {
+    assert!(RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop::spawn_scoped"));
+    assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop::channel()"));
 }
 
 /// Extracts the first package version entry from Cargo.toml content.
