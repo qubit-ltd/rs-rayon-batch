@@ -282,7 +282,7 @@ impl BatchExecutor for RayonBatchExecutor {
             let reporter_state = Arc::clone(&state);
             let running_progress = progress
                 .spawn_running_reporter(thread_scope, move || reporter_state.progress_counters());
-            let worker_progress_point_handle = running_progress.point_handle();
+            let running_point_handle = running_progress.point_handle();
 
             self.pool.in_place_scope_fifo(|scope| {
                 let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
@@ -290,13 +290,9 @@ impl BatchExecutor for RayonBatchExecutor {
                 for _ in 0..worker_count {
                     let worker_receiver = Arc::clone(&work_receiver);
                     let worker_state = Arc::clone(&state);
-                    let worker_progress_point_handle = worker_progress_point_handle.clone();
+                    let running_point_handle = running_point_handle.clone();
                     scope.spawn_fifo(move |_| {
-                        run_rayon_worker(
-                            worker_receiver,
-                            worker_state,
-                            worker_progress_point_handle,
-                        );
+                        run_rayon_worker(worker_receiver, worker_state, running_point_handle);
                     });
                 }
                 drop(work_receiver);
