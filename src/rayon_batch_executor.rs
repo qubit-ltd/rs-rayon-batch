@@ -36,10 +36,8 @@ use qubit_batch::{
 use qubit_function::Runnable;
 use qubit_progress::{
     Progress,
-    ProgressPhase,
     ProgressReporter,
-    RunningProgressLoop,
-    RunningProgressPoints,
+    RunningProgressPointHandle,
 };
 use rayon::ThreadPool as RayonThreadPool;
 
@@ -61,6 +59,28 @@ struct RayonWorkItem<T> {
 /// The executor runs small batches sequentially when the declared batch size is
 /// at or below the configured sequential threshold.
 ///
+/// ```rust
+/// use qubit_rayon_batch::{
+///     BatchExecutor,
+///     RayonBatchExecutor,
+/// };
+///
+/// let executor = RayonBatchExecutor::builder()
+///     .thread_count(2)
+///     .sequential_threshold(0)
+///     .build()
+///     .expect("rayon batch executor should build");
+///
+/// let tasks = (0..4).map(|value| move || {
+///     assert!(value < 4);
+///     Ok::<(), &'static str>(())
+/// });
+/// let outcome = executor
+///     .execute(tasks, 4)
+///     .expect("range should match the declared count");
+///
+/// assert!(outcome.is_success());
+/// ```
 #[derive(Clone)]
 pub struct RayonBatchExecutor {
     /// Dedicated Rayon pool used for parallel batch execution.
@@ -253,25 +273,16 @@ impl BatchExecutor for RayonBatchExecutor {
         }
 
         let state = Arc::new(BatchExecutionState::new(count));
-        let reporter = Arc::clone(&self.reporter);
-        let progress = Progress::new(reporter.as_ref(), self.report_interval);
-        progress.report_with_elapsed(
-            ProgressPhase::Started,
-            state.progress_counters(),
-            Duration::ZERO,
-        );
-        let start = progress.started_at();
+        let progress = Progress::new(self.reporter.as_ref(), self.report_interval);
+        progress.report_started(state.progress_counters());
         let mut observed_count = 0usize;
         let worker_count = self.thread_count.min(count);
 
         thread::scope(|thread_scope| {
             let reporter_state = Arc::clone(&state);
-            let progress = Progress::from_start(reporter.as_ref(), self.report_interval, start);
-            let running_progress =
-                RunningProgressLoop::spawn_scoped(thread_scope, progress, move || {
-                    reporter_state.progress_counters()
-                });
-            let worker_progress_points = running_progress.points();
+            let running_progress = progress
+                .spawn_running_reporter(thread_scope, move || reporter_state.progress_counters());
+            let worker_progress_point_handle = running_progress.point_handle();
 
             self.pool.in_place_scope_fifo(|scope| {
                 let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
@@ -279,9 +290,13 @@ impl BatchExecutor for RayonBatchExecutor {
                 for _ in 0..worker_count {
                     let worker_receiver = Arc::clone(&work_receiver);
                     let worker_state = Arc::clone(&state);
-                    let worker_progress_points = worker_progress_points.clone();
+                    let worker_progress_point_handle = worker_progress_point_handle.clone();
                     scope.spawn_fifo(move |_| {
-                        run_rayon_worker(worker_receiver, worker_state, worker_progress_points);
+                        run_rayon_worker(
+                            worker_receiver,
+                            worker_state,
+                            worker_progress_point_handle,
+                        );
                     });
                 }
                 drop(work_receiver);
@@ -307,38 +322,27 @@ impl BatchExecutor for RayonBatchExecutor {
             running_progress.stop_and_join();
         });
 
-        let elapsed = progress.elapsed();
-        let result = Arc::into_inner(state)
-            .expect("rayon batch execution state should have a single owner")
-            .into_outcome(elapsed);
+        let state =
+            Arc::into_inner(state).expect("rayon batch execution state should have a single owner");
         if observed_count < count {
-            progress.report_with_elapsed(
-                ProgressPhase::Failed,
-                result.progress_counters(),
-                result.elapsed(),
-            );
+            let failed = progress.report_failed(state.progress_counters());
+            let result = state.into_outcome(failed.elapsed());
             Err(BatchExecutionError::CountShortfall {
                 expected: count,
                 actual: observed_count,
                 outcome: result,
             })
         } else if observed_count > count {
-            progress.report_with_elapsed(
-                ProgressPhase::Failed,
-                result.progress_counters(),
-                result.elapsed(),
-            );
+            let failed = progress.report_failed(state.progress_counters());
+            let result = state.into_outcome(failed.elapsed());
             Err(BatchExecutionError::CountExceeded {
                 expected: count,
                 observed_at_least: observed_count,
                 outcome: result,
             })
         } else {
-            progress.report_with_elapsed(
-                ProgressPhase::Finished,
-                result.progress_counters(),
-                result.elapsed(),
-            );
+            let finished = progress.report_finished(state.progress_counters());
+            let result = state.into_outcome(finished.elapsed());
             Ok(result)
         }
     }
@@ -351,11 +355,11 @@ impl BatchExecutor for RayonBatchExecutor {
 /// * `work_receiver` - Shared task receiver protected because standard receivers
 ///   are not `Sync`.
 /// * `state` - Shared execution state updated by each task.
-/// * `progress_points` - Worker-side progress-point handle.
+/// * `progress_point_handle` - Worker-side progress-point handle.
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
     state: Arc<BatchExecutionState<E>>,
-    progress_points: RunningProgressPoints,
+    progress_point_handle: RunningProgressPointHandle,
 ) where
     T: Runnable<E> + Send,
     E: Send,
@@ -369,7 +373,7 @@ fn run_rayon_worker<T, E>(
             break;
         };
         run_rayon_task(&state, index, task);
-        progress_points.running_point();
+        progress_point_handle.report();
     }
 }
 

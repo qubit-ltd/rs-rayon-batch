@@ -37,8 +37,8 @@ fn test_readme_mentions_current_executor_type() {
 #[test]
 /// Ensures Rayon progress reporting uses the shared scoped progress guard.
 fn test_rayon_progress_reporting_uses_scoped_progress_guard() {
-    assert!(RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop::spawn_scoped"));
-    assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop::channel()"));
+    assert!(RAYON_BATCH_EXECUTOR.contains("spawn_running_reporter"));
+    assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop"));
 }
 
 /// Extracts the first package version entry from Cargo.toml content.
