@@ -13,12 +13,14 @@ readme = "README.md"
 keywords = ["rayon", "batch", "executor", "cpu", "concurrency"]
 categories = ["concurrency", "development-tools"]
 exclude = [
-    "coverage.sh",
-    "check-coverage-thresholds.sh",
-    ".circleci/*",
     "align-ci.sh",
     "ci-check.sh",
+    "coverage.sh",
+    "style-check.sh",
+    "update-submodule.sh",
+    ".github/*",
     ".llvm-cov.toml",
+    ".cargo-audit.toml.example",
 ]
 
 [lib]
@@ -26,7 +28,7 @@ name = "qubit_rayon_batch"
 doctest = true
 
 [dependencies]
-qubit-function = "0.12"
+qubit-function = "0.13"
 qubit-progress = "0.4"
 qubit-batch = "0.5"
 rayon = "1.12"
