@@ -146,7 +146,7 @@ checksum = "2b1e693f9dcdb9a6b6f355f6ce3fe719dfa83215a91070b01c89dcffacc2430a"
 dependencies = [
  "crossbeam-queue",
  "qubit-atomic",
- "qubit-function",
+ "qubit-function 0.12.0",
  "qubit-progress",
  "thiserror",
 ]
@@ -162,10 +162,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "qubit-progress"
-version = "0.4.1"
+name = "qubit-function"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87762b60d0ff403e27ae8d380aed0d2c249393cdac74289ef9a35a8db6caa1c1"
+checksum = "8efec94edc436712d98c514ae339e246e079853d9eaacb1ac38c7dd50ff4f89a"
+dependencies = [
+ "parking_lot",
+ "pastey",
+]
+
+[[package]]
+name = "qubit-progress"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60d88f223cc8f8f91547f038d7632512d94a39fcc347fff07107729d527409e6"
 dependencies = [
  "log",
 ]
@@ -175,7 +185,7 @@ name = "qubit-rayon-batch"
 version = "0.4.2"
 dependencies = [
  "qubit-batch",
- "qubit-function",
+ "qubit-function 0.13.2",
  "qubit-progress",
  "rayon",
  "thiserror",
