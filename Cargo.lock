@@ -172,7 +172,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-rayon-batch"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "qubit-batch",
  "qubit-function",
