@@ -76,7 +76,7 @@ struct RayonWorkItem<T> {
 ///     Ok::<(), &'static str>(())
 /// });
 /// let outcome = executor
-///     .execute(tasks, 4)
+///     .execute_with_count(tasks, 4)
 ///     .expect("range should match the declared count");
 ///
 /// assert!(outcome.is_success());
@@ -255,7 +255,7 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// Panics from tasks are captured in the result. Panics from the configured
     /// progress reporter are propagated to the caller.
-    fn execute<T, E, I>(
+    fn execute_with_count<T, E, I>(
         &self,
         tasks: I,
         count: usize,
@@ -266,10 +266,11 @@ impl BatchExecutor for RayonBatchExecutor {
         E: Send,
     {
         if count <= self.sequential_threshold || self.thread_count <= 1 {
-            let sequential = SequentialBatchExecutor::new()
-                .with_report_interval(self.report_interval)
-                .with_reporter_arc(Arc::clone(&self.reporter));
-            return sequential.execute(tasks, count);
+            let sequential = SequentialBatchExecutor::builder()
+                .report_interval(self.report_interval)
+                .reporter_arc(Arc::clone(&self.reporter))
+                .build();
+            return sequential.execute_with_count(tasks, count);
         }
 
         let state = Arc::new(BatchExecutionState::new(count));

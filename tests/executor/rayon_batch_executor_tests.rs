@@ -142,7 +142,7 @@ fn test_rayon_batch_executor_executes_successfully() {
         .collect::<Vec<_>>();
 
     let result = executor
-        .execute(tasks, 8)
+        .execute_with_count(tasks, 8)
         .expect("rayon batch should succeed");
 
     assert_eq!(counter.load(Ordering::Acquire), 8);
@@ -161,7 +161,7 @@ fn test_rayon_batch_executor_for_each_executes_on_rayon_path() {
     let counter = Arc::new(AtomicUsize::new(0));
 
     let outcome = executor
-        .for_each(0..8, 8, {
+        .for_each_with_count(0..8, 8, {
             let counter = Arc::clone(&counter);
             move |value| {
                 assert!(value < 8);
@@ -186,7 +186,7 @@ fn test_rayon_batch_executor_supports_non_static_for_each_items() {
     let values = [1, 2, 3, 4];
 
     let outcome = executor
-        .for_each(values.iter(), values.len(), |value| {
+        .for_each_with_count(values.iter(), values.len(), |value| {
             assert!(*value > 0);
             Ok::<(), &'static str>(())
         })
@@ -211,7 +211,7 @@ fn test_rayon_batch_executor_call_collects_values_by_index() {
     ];
 
     let result = executor
-        .call(tasks, 4)
+        .call_with_count(tasks, 4)
         .expect("callable failures should stay in the batch result");
 
     assert_eq!(result.values(), &[Some(10), None, None, Some(40)]);
@@ -231,7 +231,7 @@ fn test_rayon_batch_executor_call_reports_count_mismatches() {
         .expect("rayon batch executor should build");
 
     let shortfall = executor
-        .call(vec![TestCallable::returning(10)], 2)
+        .call_with_count(vec![TestCallable::returning(10)], 2)
         .expect_err("call shortfall should be reported");
     match shortfall {
         BatchExecutionError::CountShortfall {
@@ -247,7 +247,7 @@ fn test_rayon_batch_executor_call_reports_count_mismatches() {
     }
 
     let exceeded = executor
-        .call(
+        .call_with_count(
             vec![
                 TestCallable::returning(10),
                 TestCallable::returning(20),
@@ -285,7 +285,7 @@ fn test_rayon_batch_executor_collects_failures_and_panics() {
     ];
 
     let result = executor
-        .execute(tasks, 4)
+        .execute_with_count(tasks, 4)
         .expect("task failures should stay in the batch result");
 
     assert_eq!(result.completed_count(), 4);
@@ -313,7 +313,7 @@ fn test_rayon_batch_executor_orders_failures_by_task_index() {
     ];
 
     let result = executor
-        .execute(tasks, 2)
+        .execute_with_count(tasks, 2)
         .expect("task failures should stay in the batch result");
 
     assert_eq!(result.failures().len(), 2);
@@ -331,7 +331,7 @@ fn test_rayon_batch_executor_reports_count_shortfall() {
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
     let error = executor
-        .execute(tasks, 3)
+        .execute_with_count(tasks, 3)
         .expect_err("shortfall should be reported");
 
     match error {
@@ -358,7 +358,7 @@ fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation()
     let tasks = vec![TestTask::succeed()];
 
     let error = executor
-        .execute(tasks, usize::MAX)
+        .execute_with_count(tasks, usize::MAX)
         .expect_err("shortfall should be reported without preallocating count");
 
     match error {
@@ -385,7 +385,7 @@ fn test_rayon_batch_executor_reports_count_exceeded() {
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
     let error = executor
-        .execute(tasks, 1)
+        .execute_with_count(tasks, 1)
         .expect_err("overflow should be reported");
 
     match error {
@@ -416,7 +416,7 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
     ];
 
     let error = executor
-        .execute(tasks, 2)
+        .execute_with_count(tasks, 2)
         .expect_err("overflow should be reported");
 
     match error {
@@ -453,7 +453,7 @@ fn test_rayon_batch_executor_runs_tasks_concurrently() {
         .collect::<Vec<_>>();
 
     let result = executor
-        .execute(tasks, 8)
+        .execute_with_count(tasks, 8)
         .expect("rayon batch should succeed");
 
     assert_eq!(result.completed_count(), 8);
@@ -479,7 +479,9 @@ fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
         })
         .collect::<Vec<_>>();
 
-    let result = executor.execute(tasks, 4).expect("batch should succeed");
+    let result = executor
+        .execute_with_count(tasks, 4)
+        .expect("batch should succeed");
 
     assert_eq!(result.completed_count(), 4);
     assert_eq!(max_active.load(Ordering::Acquire), 1);
@@ -502,7 +504,9 @@ fn test_rayon_batch_executor_reports_progress() {
         TestTask::sleep_success(Duration::from_millis(60)),
     ];
 
-    let result = executor.execute(tasks, 4).expect("batch should succeed");
+    let result = executor
+        .execute_with_count(tasks, 4)
+        .expect("batch should succeed");
     let events = reporter.events();
 
     assert_eq!(result.completed_count(), 4);
@@ -552,7 +556,7 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
     ];
 
     let result = executor
-        .execute(tasks, 3)
+        .execute_with_count(tasks, 3)
         .expect("task failure should stay in the batch result");
     let events = reporter.events();
 
@@ -587,7 +591,7 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
     ];
 
     let error = executor
-        .execute(tasks, 2)
+        .execute_with_count(tasks, 2)
         .expect_err("overflow should be reported");
     let events = reporter.events();
 
@@ -622,7 +626,7 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
         TestTask::sleep_success(Duration::from_millis(5))
     });
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 3)))
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 3)))
         .expect_err("iterator panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
@@ -645,7 +649,7 @@ fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_p
         .map(|_| TestTask::sleep_success(Duration::from_millis(10)))
         .collect::<Vec<_>>();
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 2)))
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
         .expect_err("zero-interval progress reporter panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
@@ -668,7 +672,7 @@ fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
         .map(|_| TestTask::sleep_success(Duration::from_millis(50)))
         .collect::<Vec<_>>();
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 2)))
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
         .expect_err("progress reporter panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
@@ -688,7 +692,7 @@ fn test_rayon_batch_executor_propagates_progress_reporter_start_panic() {
         .expect("rayon batch executor should build");
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 2)))
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
         .expect_err("progress reporter start panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
@@ -708,7 +712,7 @@ fn test_rayon_batch_executor_propagates_progress_reporter_finish_panic() {
         .expect("rayon batch executor should build");
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute(tasks, 2)))
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
         .expect_err("progress reporter finish panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
