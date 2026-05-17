@@ -54,7 +54,7 @@ fn test_rayon_batch_executor_builder_uses_shared_reporter_arc() {
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
     let outcome = executor
-        .execute(tasks, 2)
+        .execute_with_count(tasks, 2)
         .expect("batch should execute with shared reporter");
     let events = reporter.events();
 
@@ -82,7 +82,7 @@ fn test_rayon_batch_executor_builder_no_reporter_replaces_custom_reporter() {
     let tasks = vec![TestTask::succeed()];
 
     let outcome = executor
-        .execute(tasks, 1)
+        .execute_with_count(tasks, 1)
         .expect("batch should execute with no-op reporter");
 
     assert_eq!(outcome.completed_count(), 1);
