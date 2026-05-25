@@ -22,10 +22,7 @@ fn test_rayon_batch_executor_build_error_formats_zero_thread_count() {
         .err()
         .expect("zero thread count should fail");
 
-    assert!(matches!(
-        error,
-        RayonBatchExecutorBuildError::ZeroThreadCount
-    ));
+    assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
     assert_eq!(
         error.to_string(),
         "rayon batch executor thread count must be greater than zero"

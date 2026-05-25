@@ -33,7 +33,7 @@ pub use qubit_batch::{
 };
 pub use qubit_progress::{
     NoOpProgressReporter,
-    ProgressCounters,
+    ProgressCounter,
     ProgressEvent,
     ProgressPhase,
     ProgressReporter,

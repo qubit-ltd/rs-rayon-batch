@@ -191,11 +191,7 @@ impl TestTask {
     /// # Returns
     ///
     /// A concurrency-tracking successful task.
-    pub fn track_concurrency(
-        active: Arc<AtomicUsize>,
-        max_active: Arc<AtomicUsize>,
-        duration: Duration,
-    ) -> Self {
+    pub fn track_concurrency(active: Arc<AtomicUsize>, max_active: Arc<AtomicUsize>, duration: Duration) -> Self {
         Self {
             action: TestTaskAction::TrackConcurrency {
                 active,

@@ -46,6 +46,12 @@ use crate::{
     RayonBatchExecutorBuilder,
 };
 
+/// Metric id used for task progress counters.
+const EXECUTION_PROGRESS_METRIC_ID: &str = "tasks";
+
+/// Metric display name used for task progress counters.
+const EXECUTION_PROGRESS_METRIC_NAME: &str = "Tasks";
+
 /// Indexed task sent to Rayon worker loops.
 struct RayonWorkItem<T> {
     /// Zero-based task index within the declared batch.
@@ -109,9 +115,7 @@ impl RayonBatchExecutor {
     /// The available CPU parallelism, or `1` if it cannot be detected.
     #[inline]
     pub fn default_thread_count() -> usize {
-        thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
+        thread::available_parallelism().map(usize::from).unwrap_or(1)
     }
 
     /// Creates a builder for configuring a Rayon batch executor.
@@ -161,10 +165,7 @@ impl RayonBatchExecutor {
     ///
     /// A new [`RayonBatchExecutor`] using the supplied pool and configuration.
     #[inline]
-    pub(crate) fn new_with_rayon(
-        pool: RayonThreadPool,
-        builder: RayonBatchExecutorBuilder,
-    ) -> Self {
+    pub(crate) fn new_with_rayon(pool: RayonThreadPool, builder: RayonBatchExecutorBuilder) -> Self {
         Self {
             pool: Arc::new(pool),
             thread_count: builder.thread_count,
@@ -255,11 +256,7 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// Panics from tasks are captured in the result. Panics from the configured
     /// progress reporter are propagated to the caller.
-    fn execute_with_count<T, E, I>(
-        &self,
-        tasks: I,
-        count: usize,
-    ) -> Result<BatchOutcome<E>, BatchExecutionError<E>>
+    fn execute_with_count<T, E, I>(&self, tasks: I, count: usize) -> Result<BatchOutcome<E>, BatchExecutionError<E>>
     where
         I: IntoIterator<Item = T>,
         T: Runnable<E> + Send,
@@ -274,15 +271,20 @@ impl BatchExecutor for RayonBatchExecutor {
         }
 
         let state = Arc::new(BatchExecutionState::new(count));
-        let progress = Progress::new(self.reporter.as_ref(), self.report_interval);
-        progress.report_started(state.progress_counters());
+        let progress = Progress::single_metric(
+            self.reporter.as_ref(),
+            self.report_interval,
+            EXECUTION_PROGRESS_METRIC_ID,
+            EXECUTION_PROGRESS_METRIC_NAME,
+        );
+        progress.report_started(|event| event.counters(state.progress_counters()));
         let mut observed_count = 0usize;
         let worker_count = self.thread_count.min(count);
 
         thread::scope(|thread_scope| {
             let reporter_state = Arc::clone(&state);
-            let running_progress = progress
-                .spawn_running_reporter(thread_scope, move || reporter_state.progress_counters());
+            let running_progress =
+                progress.spawn_running_reporter(thread_scope, move || reporter_state.progress_counters());
             let running_point_handle = running_progress.point_handle();
 
             self.pool.in_place_scope_fifo(|scope| {
@@ -319,10 +321,9 @@ impl BatchExecutor for RayonBatchExecutor {
             running_progress.stop_and_join();
         });
 
-        let state =
-            Arc::into_inner(state).expect("rayon batch execution state should have a single owner");
+        let state = Arc::into_inner(state).expect("rayon batch execution state should have a single owner");
         if observed_count < count {
-            let failed = progress.report_failed(state.progress_counters());
+            let failed = progress.report_failed(|event| event.counters(state.progress_counters()));
             let result = state.into_outcome(failed.elapsed());
             Err(BatchExecutionError::CountShortfall {
                 expected: count,
@@ -330,7 +331,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 outcome: result,
             })
         } else if observed_count > count {
-            let failed = progress.report_failed(state.progress_counters());
+            let failed = progress.report_failed(|event| event.counters(state.progress_counters()));
             let result = state.into_outcome(failed.elapsed());
             Err(BatchExecutionError::CountExceeded {
                 expected: count,
@@ -338,7 +339,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 outcome: result,
             })
         } else {
-            let finished = progress.report_finished(state.progress_counters());
+            let finished = progress.report_finished(|event| event.counters(state.progress_counters()));
             let result = state.into_outcome(finished.elapsed());
             Ok(result)
         }
@@ -362,10 +363,7 @@ fn run_rayon_worker<T, E>(
     E: Send,
 {
     loop {
-        let received = work_receiver
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .recv();
+        let received = work_receiver.lock().unwrap_or_else(PoisonError::into_inner).recv();
         let Ok(RayonWorkItem { index, task }) = received else {
             break;
         };
