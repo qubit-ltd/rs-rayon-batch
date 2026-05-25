@@ -28,6 +28,8 @@ use std::{
 use qubit_rayon_batch::{
     BatchExecutionError,
     BatchExecutor,
+    ProgressCounter,
+    ProgressEvent,
     ProgressPhase,
     RayonBatchExecutor,
     RayonBatchExecutorBuildError,
@@ -42,6 +44,29 @@ use crate::support::{
     panic_payload_message,
 };
 
+/// Returns the single task counter carried by a progress event.
+///
+/// # Parameters
+///
+/// * `event` - Progress event emitted by the executor under test.
+///
+/// # Returns
+///
+/// The only counter recorded in the event.
+///
+/// # Panics
+///
+/// Panics if the event does not carry exactly one counter.
+fn task_counter(event: &ProgressEvent) -> &ProgressCounter {
+    match event.counters() {
+        [counter] => counter,
+        counters => panic!(
+            "progress event should contain exactly one task counter, got {}",
+            counters.len()
+        ),
+    }
+}
+
 #[test]
 fn test_rayon_batch_executor_build_rejects_invalid_thread_count() {
     let error = RayonBatchExecutor::builder()
@@ -50,10 +75,7 @@ fn test_rayon_batch_executor_build_rejects_invalid_thread_count() {
         .err()
         .expect("zero thread count should be rejected");
 
-    assert!(matches!(
-        error,
-        RayonBatchExecutorBuildError::ZeroThreadCount
-    ));
+    assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
 }
 
 #[test]
@@ -86,10 +108,7 @@ fn test_rayon_batch_executor_build_reports_thread_pool_failure() {
         .err()
         .expect("impossibly large stack size should make Rayon fail");
 
-    assert!(matches!(
-        error,
-        RayonBatchExecutorBuildError::BuildFailed { .. }
-    ));
+    assert!(matches!(error, RayonBatchExecutorBuildError::BuildFailed { .. }));
 }
 
 #[test]
@@ -103,10 +122,7 @@ fn test_rayon_batch_executor_new_default_and_accessors() {
         executor.sequential_threshold(),
         RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD
     );
-    assert_eq!(
-        executor.report_interval(),
-        RayonBatchExecutor::DEFAULT_REPORT_INTERVAL
-    );
+    assert_eq!(executor.report_interval(), RayonBatchExecutor::DEFAULT_REPORT_INTERVAL);
     assert!(Arc::strong_count(executor.reporter()) >= 1);
     assert!(default_executor.thread_count() >= 1);
 }
@@ -409,11 +425,7 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
-    let tasks = vec![
-        TestTask::succeed(),
-        TestTask::succeed(),
-        TestTask::succeed(),
-    ];
+    let tasks = vec![TestTask::succeed(), TestTask::succeed(), TestTask::succeed()];
 
     let error = executor
         .execute_with_count(tasks, 2)
@@ -443,13 +455,7 @@ fn test_rayon_batch_executor_runs_tasks_concurrently() {
     let active = Arc::new(AtomicUsize::new(0));
     let max_active = Arc::new(AtomicUsize::new(0));
     let tasks = (0..8)
-        .map(|_| {
-            TestTask::track_concurrency(
-                Arc::clone(&active),
-                Arc::clone(&max_active),
-                Duration::from_millis(30),
-            )
-        })
+        .map(|_| TestTask::track_concurrency(Arc::clone(&active), Arc::clone(&max_active), Duration::from_millis(30)))
         .collect::<Vec<_>>();
 
     let result = executor
@@ -470,18 +476,10 @@ fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
     let active = Arc::new(AtomicUsize::new(0));
     let max_active = Arc::new(AtomicUsize::new(0));
     let tasks = (0..4)
-        .map(|_| {
-            TestTask::track_concurrency(
-                Arc::clone(&active),
-                Arc::clone(&max_active),
-                Duration::from_millis(10),
-            )
-        })
+        .map(|_| TestTask::track_concurrency(Arc::clone(&active), Arc::clone(&max_active), Duration::from_millis(10)))
         .collect::<Vec<_>>();
 
-    let result = executor
-        .execute_with_count(tasks, 4)
-        .expect("batch should succeed");
+    let result = executor.execute_with_count(tasks, 4).expect("batch should succeed");
 
     assert_eq!(result.completed_count(), 4);
     assert_eq!(max_active.load(Ordering::Acquire), 1);
@@ -504,38 +502,36 @@ fn test_rayon_batch_executor_reports_progress() {
         TestTask::sleep_success(Duration::from_millis(60)),
     ];
 
-    let result = executor
-        .execute_with_count(tasks, 4)
-        .expect("batch should succeed");
+    let result = executor.execute_with_count(tasks, 4).expect("batch should succeed");
     let events = reporter.events();
 
     assert_eq!(result.completed_count(), 4);
     assert_eq!(result.failed_count(), 1);
     assert!(matches!(events.first(), Some(event)
         if event.phase() == ProgressPhase::Started
-            && event.counters().total_count() == Some(4)
+            && task_counter(event).total_count() == Some(4)
     ));
     assert!(
         events
             .iter()
             .any(|event| matches!(event.phase(), ProgressPhase::Running)
-                && event.counters().total_count() == Some(4)
-                && event.counters().active_count() > 0)
+                && task_counter(event).total_count() == Some(4)
+                && task_counter(event).active_count() > 0)
     );
     assert!(
         events
             .iter()
             .any(|event| matches!(event.phase(), ProgressPhase::Running)
-                && (event.counters().succeeded_count() > 0 || event.counters().failed_count() > 0))
+                && (task_counter(event).succeeded_count() > 0 || task_counter(event).failed_count() > 0))
     );
     assert!(events.iter().all(|event| match event {
-        event if event.phase() == ProgressPhase::Running => event.counters().active_count() <= 2,
+        event if event.phase() == ProgressPhase::Running => task_counter(event).active_count() <= 2,
         _ => true,
     }));
     assert!(matches!(events.last(), Some(event)
         if event.phase() == ProgressPhase::Finished
-            && event.counters().total_count() == Some(4)
-            && event.counters().completed_count() == 4
+            && task_counter(event).total_count() == Some(4)
+            && task_counter(event).completed_count() == 4
     ));
 }
 
@@ -562,15 +558,11 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
 
     assert_eq!(result.completed_count(), 3);
     assert_eq!(result.failed_count(), 1);
-    assert!(
-        events
-            .iter()
-            .any(|event| event.phase() == ProgressPhase::Running)
-    );
+    assert!(events.iter().any(|event| event.phase() == ProgressPhase::Running));
     assert!(matches!(events.last(), Some(event)
         if event.phase() == ProgressPhase::Finished
-            && event.counters().completed_count() == 3
-            && event.counters().failed_count() == 1
+            && task_counter(event).completed_count() == 3
+            && task_counter(event).failed_count() == 1
     ));
 }
 
@@ -584,11 +576,7 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
         .reporter_arc(reporter.clone())
         .build()
         .expect("rayon batch executor should build");
-    let tasks = vec![
-        TestTask::succeed(),
-        TestTask::succeed(),
-        TestTask::succeed(),
-    ];
+    let tasks = vec![TestTask::succeed(), TestTask::succeed(), TestTask::succeed()];
 
     let error = executor
         .execute_with_count(tasks, 2)
@@ -605,8 +593,8 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
     ));
     assert!(matches!(events.last(), Some(event)
         if event.phase() == ProgressPhase::Failed
-            && event.counters().total_count() == Some(2)
-            && event.counters().completed_count() == 2
+            && task_counter(event).total_count() == Some(2)
+            && task_counter(event).completed_count() == 2
     ));
 }
 
@@ -684,10 +672,7 @@ fn test_rayon_batch_executor_propagates_progress_reporter_start_panic() {
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(1)
-        .reporter(PanickingProgressReporter::new(
-            ProgressPanicPhase::Start,
-            PANIC_MESSAGE,
-        ))
+        .reporter(PanickingProgressReporter::new(ProgressPanicPhase::Start, PANIC_MESSAGE))
         .build()
         .expect("rayon batch executor should build");
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];

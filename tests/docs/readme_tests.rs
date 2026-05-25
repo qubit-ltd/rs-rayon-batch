@@ -17,8 +17,7 @@ const RAYON_BATCH_EXECUTOR: &str = include_str!("../../src/rayon_batch_executor.
 #[test]
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
 fn test_readme_dependency_version_matches_cargo_toml() {
-    let package_version =
-        extract_package_version(CARGO_TOML).expect("Failed to extract version from Cargo.toml");
+    let package_version = extract_package_version(CARGO_TOML).expect("Failed to extract version from Cargo.toml");
     let cargo_qubit_batch = extract_cargo_dependency_version(CARGO_TOML, "qubit-batch")
         .expect("Failed to extract qubit-batch from Cargo.toml");
 
@@ -26,10 +25,10 @@ fn test_readme_dependency_version_matches_cargo_toml() {
         .expect("Failed to extract qubit-rayon-batch from README.md");
     let readme_zh_rayon = extract_readme_qubit_rayon_batch_version(README_ZH)
         .expect("Failed to extract qubit-rayon-batch from README.zh_CN.md");
-    let readme_en_batch = extract_readme_qubit_batch_version(README_EN)
-        .expect("Failed to extract qubit-batch from README.md");
-    let readme_zh_batch = extract_readme_qubit_batch_version(README_ZH)
-        .expect("Failed to extract qubit-batch from README.zh_CN.md");
+    let readme_en_batch =
+        extract_readme_qubit_batch_version(README_EN).expect("Failed to extract qubit-batch from README.md");
+    let readme_zh_batch =
+        extract_readme_qubit_batch_version(README_ZH).expect("Failed to extract qubit-batch from README.zh_CN.md");
 
     assert_eq!(
         readme_en_rayon, readme_zh_rayon,
