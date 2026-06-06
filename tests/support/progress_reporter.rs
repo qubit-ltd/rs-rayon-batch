@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 use std::{
     panic::panic_any,
     sync::Mutex,
@@ -112,9 +110,15 @@ impl PanickingProgressReporter {
 impl ProgressReporter for PanickingProgressReporter {
     fn report(&self, event: &ProgressEvent) {
         match event.phase() {
-            ProgressPhase::Started => self.panic_if_configured(ProgressPanicPhase::Start),
-            ProgressPhase::Running => self.panic_if_configured(ProgressPanicPhase::Process),
-            ProgressPhase::Finished => self.panic_if_configured(ProgressPanicPhase::Finish),
+            ProgressPhase::Started => {
+                self.panic_if_configured(ProgressPanicPhase::Start)
+            }
+            ProgressPhase::Running => {
+                self.panic_if_configured(ProgressPanicPhase::Process)
+            }
+            ProgressPhase::Finished => {
+                self.panic_if_configured(ProgressPanicPhase::Finish)
+            }
             ProgressPhase::Failed | ProgressPhase::Canceled => {}
         }
     }

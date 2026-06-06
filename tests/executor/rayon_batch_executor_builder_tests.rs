@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Tests for [`RayonBatchExecutorBuilder`](qubit_rayon_batch::RayonBatchExecutorBuilder).
 
 use std::{
@@ -59,8 +57,16 @@ fn test_rayon_batch_executor_builder_uses_shared_reporter_arc() {
     let events = reporter.events();
 
     assert_eq!(outcome.completed_count(), 2);
-    assert!(events.iter().any(|event| event.phase() == ProgressPhase::Started));
-    assert!(events.iter().any(|event| event.phase() == ProgressPhase::Finished));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.phase() == ProgressPhase::Started)
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.phase() == ProgressPhase::Finished)
+    );
 }
 
 #[test]
