@@ -1,17 +1,14 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 use thiserror::Error;
 
 /// Error returned when [`crate::RayonBatchExecutorBuilder`] cannot build an
 /// executor.
-///
 #[derive(Debug, Error)]
 pub enum RayonBatchExecutorBuildError {
     /// The configured Rayon thread count is zero.

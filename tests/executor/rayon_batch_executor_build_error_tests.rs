@@ -1,12 +1,10 @@
-/*******************************************************************************
- *
- *    Copyright (c) 2025 - 2026 Haixing Hu.
- *
- *    SPDX-License-Identifier: Apache-2.0
- *
- *    Licensed under the Apache License, Version 2.0.
- *
- ******************************************************************************/
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
 //! Tests for [`RayonBatchExecutorBuildError`](qubit_rayon_batch::RayonBatchExecutorBuildError).
 
 use qubit_rayon_batch::{
@@ -22,7 +20,10 @@ fn test_rayon_batch_executor_build_error_formats_zero_thread_count() {
         .err()
         .expect("zero thread count should fail");
 
-    assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
+    assert!(matches!(
+        error,
+        RayonBatchExecutorBuildError::ZeroThreadCount
+    ));
     assert_eq!(
         error.to_string(),
         "rayon batch executor thread count must be greater than zero"
