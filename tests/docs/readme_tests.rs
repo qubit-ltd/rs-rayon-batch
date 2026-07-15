@@ -89,16 +89,31 @@ fn extract_readme_qubit_batch_version(content: &str) -> Option<&str> {
     None
 }
 
-/// Reads `[dependencies] dep_name = "..."` from Cargo.toml (first match).
+/// Reads a dependency version from either a string or inline-table entry.
 fn extract_cargo_dependency_version<'a>(
     content: &'a str,
     dep_name: &str,
 ) -> Option<&'a str> {
-    let prefix = format!("{dep_name} = \"");
+    let prefix = format!("{dep_name} = ");
     for line in content.lines() {
         let line = line.trim();
         if let Some(value) = line.strip_prefix(&prefix) {
-            return value.strip_suffix('"');
+            if let Some(version) = value
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+            {
+                return Some(version);
+            }
+            for field in value.strip_prefix('{')?.strip_suffix('}')?.split(',')
+            {
+                if let Some(version) = field
+                    .trim()
+                    .strip_prefix("version = \"")
+                    .and_then(|value| value.strip_suffix('"'))
+                {
+                    return Some(version);
+                }
+            }
         }
     }
     None
