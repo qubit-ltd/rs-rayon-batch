@@ -59,11 +59,15 @@ impl RecordingProgressReporter {
 }
 
 impl ProgressReporter for RecordingProgressReporter {
-    fn report(&self, event: &ProgressEvent) {
+    fn report(
+        &self,
+        event: &ProgressEvent,
+    ) -> Result<(), qubit_progress::ProgressReportError> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(event.clone());
+        Ok(())
     }
 }
 
@@ -108,7 +112,10 @@ impl PanickingProgressReporter {
 }
 
 impl ProgressReporter for PanickingProgressReporter {
-    fn report(&self, event: &ProgressEvent) {
+    fn report(
+        &self,
+        event: &ProgressEvent,
+    ) -> Result<(), qubit_progress::ProgressReportError> {
         match event.phase() {
             ProgressPhase::Started => {
                 self.panic_if_configured(ProgressPanicPhase::Start)
@@ -121,5 +128,6 @@ impl ProgressReporter for PanickingProgressReporter {
             }
             ProgressPhase::Failed | ProgressPhase::Canceled => {}
         }
+        Ok(())
     }
 }
