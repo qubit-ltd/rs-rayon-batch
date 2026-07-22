@@ -34,6 +34,7 @@ use qubit_rayon_batch::{
 };
 
 use crate::support::{
+    FailingProgressReporter,
     PanickingProgressReporter,
     ProgressPanicPhase,
     RecordingProgressReporter,
@@ -41,6 +42,23 @@ use crate::support::{
     TestTask,
     panic_payload_message,
 };
+
+#[test]
+fn test_rayon_batch_executor_returns_progress_report_error() {
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(1)
+        .reporter(FailingProgressReporter::after_successes(1))
+        .build()
+        .expect("valid executor configuration should build");
+
+    let error = executor
+        .execute_with_count([TestTask::succeed(), TestTask::succeed()], 2)
+        .expect_err("failing reporter should fail batch execution");
+
+    assert!(matches!(&error, BatchExecutionError::ProgressReport { .. }));
+    assert_eq!(error.outcome().completed_count(), 2);
+}
 
 /// Returns the single task counter carried by a progress event.
 ///

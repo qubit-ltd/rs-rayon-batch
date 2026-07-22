@@ -7,11 +7,13 @@
 // =============================================================================
 //! Shared test support for `qubit-rayon-batch`.
 
+mod failing_progress_reporter;
 mod panic_payload;
 mod progress_reporter;
 mod test_callable;
 mod test_task;
 
+pub use failing_progress_reporter::FailingProgressReporter;
 pub use panic_payload::panic_payload_message;
 pub use progress_reporter::{
     PanickingProgressReporter,
