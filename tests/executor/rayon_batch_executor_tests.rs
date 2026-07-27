@@ -23,12 +23,16 @@ use std::{
     time::Duration,
 };
 
-use qubit_rayon_batch::{
+use qubit_batch::{
     BatchExecutionError,
     BatchExecutor,
+};
+use qubit_progress::{
     ProgressCounter,
     ProgressEvent,
     ProgressPhase,
+};
+use qubit_rayon_batch::{
     RayonBatchExecutor,
     RayonBatchExecutorBuildError,
 };

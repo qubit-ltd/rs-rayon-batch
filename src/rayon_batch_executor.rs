@@ -64,10 +64,8 @@ struct RayonWorkItem<T> {
 /// at or below the configured sequential threshold.
 ///
 /// ```rust
-/// use qubit_rayon_batch::{
-///     BatchExecutor,
-///     RayonBatchExecutor,
-/// };
+/// use qubit_batch::BatchExecutor;
+/// use qubit_rayon_batch::RayonBatchExecutor;
 ///
 /// let executor = RayonBatchExecutor::builder()
 ///     .thread_count(2)

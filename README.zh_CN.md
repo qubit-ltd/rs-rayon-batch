@@ -21,8 +21,9 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 - `RayonBatchExecutorBuilder`：配置工作线程数量、顺序退化阈值、进度回调、
   线程名和栈大小。
 - `RayonBatchExecutorBuildError`：构建期配置校验和 Rayon 线程池错误。
-- 便捷重导出 `BatchExecutor`、`BatchCallResult`、`BatchOutcome`、
-  `BatchExecutionState` 和 `ProgressReporter`。
+
+核心批处理和进度类型请直接从 `qubit-batch` 与 `qubit-progress` 导入；本 crate
+只导出 Rayon 专属的执行器 API。
 
 ## 特性
 
@@ -43,10 +44,8 @@ qubit-rayon-batch = "0.8"
 ## 快速开始
 
 ```rust
-use qubit_rayon_batch::{
-    BatchExecutor,
-    RayonBatchExecutor,
-};
+use qubit_batch::BatchExecutor;
+use qubit_rayon_batch::RayonBatchExecutor;
 
 let executor = RayonBatchExecutor::builder()
     .thread_count(4)

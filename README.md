@@ -22,8 +22,9 @@ The crate provides:
 - `RayonBatchExecutorBuilder`: configuration for worker count, sequential
   fallback threshold, progress reporting, thread names, and stack size.
 - `RayonBatchExecutorBuildError`: build-time validation and Rayon pool errors.
-- Convenient re-exports for `BatchExecutor`, `BatchCallResult`,
-  `BatchOutcome`, `BatchExecutionState`, and `ProgressReporter`.
+
+Import core batch and progress types directly from `qubit-batch` and
+`qubit-progress`; this crate exports only its Rayon-specific executor API.
 
 ## Features
 
@@ -45,10 +46,8 @@ qubit-rayon-batch = "0.8"
 ## Quick Start
 
 ```rust
-use qubit_rayon_batch::{
-    BatchExecutor,
-    RayonBatchExecutor,
-};
+use qubit_batch::BatchExecutor;
+use qubit_rayon_batch::RayonBatchExecutor;
 
 let executor = RayonBatchExecutor::builder()
     .thread_count(4)
