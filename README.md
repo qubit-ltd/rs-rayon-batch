@@ -29,7 +29,8 @@ Import core batch and progress types directly from `qubit-batch` and
 ## Features
 
 - Run CPU-oriented batch work on a dedicated Rayon pool.
-- Fall back to sequential execution for small batches.
+- Fall back to sequential execution for small batches while preserving the
+  parallel executor's collect-all task-failure behavior.
 - Keep stable task indexes for failures even when work finishes out of order.
 - Capture task panics as batch failures while propagating progress-reporter
   panics.
