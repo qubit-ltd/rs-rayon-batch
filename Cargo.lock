@@ -52,12 +52,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 
 [[package]]
-name = "heck"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
 name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -95,10 +89,11 @@ dependencies = [
 
 [[package]]
 name = "qubit-datatype"
-version = "0.8.0"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9dd16b80a75460ac639b745af90ef486a7544574c63d0949994678afe05dd83"
 dependencies = [
  "serde",
- "strum",
  "thiserror",
 ]
 
@@ -112,7 +107,7 @@ checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
 name = "qubit-progress"
 version = "0.6.0"
 dependencies = [
- "qubit-serde",
+ "qubit-datatype",
  "serde",
 ]
 
@@ -125,14 +120,6 @@ dependencies = [
  "qubit-progress",
  "rayon",
  "thiserror",
-]
-
-[[package]]
-name = "qubit-serde"
-version = "0.4.0"
-dependencies = [
- "qubit-datatype",
- "serde",
 ]
 
 [[package]]
@@ -195,27 +182,6 @@ version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "strum"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
-dependencies = [
- "strum_macros",
-]
-
-[[package]]
-name = "strum_macros"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
-dependencies = [
- "heck",
  "proc-macro2",
  "quote",
  "syn",

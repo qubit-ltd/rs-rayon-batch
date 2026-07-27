@@ -12,11 +12,9 @@ use std::{
     time::Duration,
 };
 
-use qubit_rayon_batch::{
-    BatchExecutor,
-    ProgressPhase,
-    RayonBatchExecutor,
-};
+use qubit_batch::BatchExecutor;
+use qubit_progress::ProgressPhase;
+use qubit_rayon_batch::RayonBatchExecutor;
 
 use crate::support::{
     RecordingProgressReporter,
