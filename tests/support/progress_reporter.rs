@@ -11,9 +11,9 @@ use std::{
 };
 
 use qubit_progress::{
-    ProgressEvent,
-    ProgressPhase,
-    ProgressReporter,
+    Event,
+    Phase,
+    Reporter,
 };
 
 /// Progress callback that should panic during a test.
@@ -31,7 +31,7 @@ pub enum ProgressPanicPhase {
 #[derive(Debug, Default)]
 pub struct RecordingProgressReporter {
     /// Recorded lifecycle events.
-    events: Mutex<Vec<ProgressEvent>>,
+    events: Mutex<Vec<Event>>,
 }
 
 impl RecordingProgressReporter {
@@ -50,7 +50,7 @@ impl RecordingProgressReporter {
     /// # Returns
     ///
     /// A cloned list of progress events in callback order.
-    pub fn events(&self) -> Vec<ProgressEvent> {
+    pub fn events(&self) -> Vec<Event> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -58,11 +58,8 @@ impl RecordingProgressReporter {
     }
 }
 
-impl ProgressReporter for RecordingProgressReporter {
-    fn report(
-        &self,
-        event: &ProgressEvent,
-    ) -> Result<(), qubit_progress::ProgressReportError> {
+impl Reporter for RecordingProgressReporter {
+    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReportError> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -111,22 +108,19 @@ impl PanickingProgressReporter {
     }
 }
 
-impl ProgressReporter for PanickingProgressReporter {
-    fn report(
-        &self,
-        event: &ProgressEvent,
-    ) -> Result<(), qubit_progress::ProgressReportError> {
+impl Reporter for PanickingProgressReporter {
+    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReportError> {
         match event.phase() {
-            ProgressPhase::Started => {
+            Phase::Started => {
                 self.panic_if_configured(ProgressPanicPhase::Start)
             }
-            ProgressPhase::Running => {
+            Phase::Running => {
                 self.panic_if_configured(ProgressPanicPhase::Process)
             }
-            ProgressPhase::Finished => {
+            Phase::Succeeded => {
                 self.panic_if_configured(ProgressPanicPhase::Finish)
             }
-            ProgressPhase::Failed | ProgressPhase::Canceled => {}
+            Phase::Failed | Phase::Cancelled => {}
         }
         Ok(())
     }

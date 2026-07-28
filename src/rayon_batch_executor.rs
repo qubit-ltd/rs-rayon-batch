@@ -31,9 +31,11 @@ use qubit_batch::{
 };
 use qubit_function::Runnable;
 use qubit_progress::{
+    Metric,
+    Notifier,
     Progress,
-    ProgressReporter,
-    RunningProgressPointHandle,
+    Reporter,
+    Status,
 };
 use rayon::ThreadPool as RayonThreadPool;
 
@@ -86,7 +88,7 @@ pub struct RayonBatchExecutor {
     /// Interval between progress callbacks while a batch is running.
     report_interval: Duration,
     /// Reporter receiving batch lifecycle callbacks.
-    reporter: Arc<dyn ProgressReporter>,
+    reporter: Arc<dyn Reporter>,
 }
 
 impl RayonBatchExecutor {
@@ -206,7 +208,7 @@ impl RayonBatchExecutor {
     ///
     /// A shared reference to the configured progress reporter.
     #[inline]
-    pub fn reporter(&self) -> &Arc<dyn ProgressReporter> {
+    pub fn reporter(&self) -> &Arc<dyn Reporter> {
         &self.reporter
     }
 }
@@ -271,33 +273,38 @@ impl BatchExecutor for RayonBatchExecutor {
         }
 
         let state = Arc::new(BatchExecutionState::new(count));
-        let progress = Progress::single_metric(
-            self.reporter.as_ref(),
-            self.report_interval,
-            EXECUTION_PROGRESS_METRIC_ID,
-            EXECUTION_PROGRESS_METRIC_NAME,
-        );
-        if let Err(source) = progress
-            .report_started(|event| event.counters(state.progress_counters()))
+        let mut progress = match Progress::builder(self.reporter.as_ref())
+            .interval(self.report_interval)
+            .metric(
+                Metric::new(
+                    EXECUTION_PROGRESS_METRIC_ID,
+                    EXECUTION_PROGRESS_METRIC_NAME,
+                )
+                .total(count as u64),
+            )
+            .start()
         {
-            let state = Arc::into_inner(state).expect(
-                "rayon batch execution state should have a single owner",
-            );
-            return Err(BatchExecutionError::ProgressReport {
-                source,
-                outcome: state.into_outcome(Duration::ZERO),
-            });
-        }
+            Ok(progress) => progress,
+            Err(source) => {
+                let state = Arc::into_inner(state).expect(
+                    "rayon batch execution state should have a single owner",
+                );
+                return Err(BatchExecutionError::ProgressReport {
+                    source,
+                    outcome: state.into_outcome(Duration::ZERO),
+                });
+            }
+        };
         let mut observed_count = 0usize;
         let worker_count = self.thread_count.min(count);
 
         let running_result = thread::scope(|thread_scope| {
             let reporter_state = Arc::clone(&state);
-            let running_progress = progress
-                .spawn_running_reporter(thread_scope, move || {
-                    reporter_state.progress_counters()
+            let running_progress =
+                progress.spawn_auto_reporter(thread_scope, move |snapshot| {
+                    reporter_state.configure_progress(snapshot);
                 });
-            let running_point_handle = running_progress.point_handle();
+            let running_point_handle = running_progress.notifier();
             let running_status = running_progress.status();
 
             self.pool.in_place_scope_fifo(|scope| {
@@ -341,7 +348,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 drop(work_sender);
             });
 
-            running_progress.stop_and_join()
+            running_progress.stop()
         });
 
         let state = Arc::into_inner(state)
@@ -353,13 +360,15 @@ impl BatchExecutor for RayonBatchExecutor {
             });
         }
         if observed_count < count {
-            let (elapsed, report_error) =
-                match progress.report_failed(|event| {
-                    event.counters(state.progress_counters())
-                }) {
-                    Ok(event) => (event.elapsed(), None),
-                    Err(source) => (progress.elapsed(), Some(Box::new(source))),
-                };
+            let (elapsed, report_error) = match progress.fail(|snapshot| {
+                state.configure_progress(snapshot);
+            }) {
+                Ok(elapsed) => (elapsed, None),
+                Err(source) => {
+                    let elapsed = source.elapsed();
+                    (elapsed, Some(Box::new(source.into_progress_error())))
+                }
+            };
             let result = state.into_outcome(elapsed);
             Err(BatchExecutionError::CountShortfall {
                 expected: count,
@@ -368,13 +377,15 @@ impl BatchExecutor for RayonBatchExecutor {
                 report_error,
             })
         } else if observed_count > count {
-            let (elapsed, report_error) =
-                match progress.report_failed(|event| {
-                    event.counters(state.progress_counters())
-                }) {
-                    Ok(event) => (event.elapsed(), None),
-                    Err(source) => (progress.elapsed(), Some(Box::new(source))),
-                };
+            let (elapsed, report_error) = match progress.fail(|snapshot| {
+                state.configure_progress(snapshot);
+            }) {
+                Ok(elapsed) => (elapsed, None),
+                Err(source) => {
+                    let elapsed = source.elapsed();
+                    (elapsed, Some(Box::new(source.into_progress_error())))
+                }
+            };
             let result = state.into_outcome(elapsed);
             Err(BatchExecutionError::CountExceeded {
                 expected: count,
@@ -384,24 +395,25 @@ impl BatchExecutor for RayonBatchExecutor {
             })
         } else {
             let terminal = if state.failure_count() > 0 {
-                progress.report_failed(|event| {
-                    event.counters(state.progress_counters())
+                progress.fail(|snapshot| {
+                    state.configure_progress(snapshot);
                 })
             } else {
-                progress.report_finished(|event| {
-                    event.counters(state.progress_counters())
+                progress.finish(|snapshot| {
+                    state.configure_progress(snapshot);
                 })
             };
             let terminal = match terminal {
-                Ok(event) => event,
+                Ok(elapsed) => elapsed,
                 Err(source) => {
+                    let elapsed = source.elapsed();
                     return Err(BatchExecutionError::ProgressReport {
-                        source,
-                        outcome: state.into_outcome(progress.elapsed()),
+                        source: source.into_progress_error(),
+                        outcome: state.into_outcome(elapsed),
                     });
                 }
             };
-            let result = state.into_outcome(terminal.elapsed());
+            let result = state.into_outcome(terminal);
             Ok(result)
         }
     }
@@ -418,8 +430,8 @@ impl BatchExecutor for RayonBatchExecutor {
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
     state: Arc<BatchExecutionState<E>>,
-    progress_point_handle: RunningProgressPointHandle,
-    progress_status: qubit_progress::RunningProgressStatus,
+    progress_point_handle: Notifier,
+    progress_status: Status,
 ) where
     T: Runnable<E> + Send,
     E: Send,
@@ -438,6 +450,6 @@ fn run_rayon_worker<T, E>(
         state
             .execute_task(index, task)
             .expect("producer must assign an in-range task index");
-        progress_point_handle.report();
+        progress_point_handle.notify();
     }
 }

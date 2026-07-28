@@ -28,9 +28,9 @@ use qubit_batch::{
     BatchExecutor,
 };
 use qubit_progress::{
-    ProgressCounter,
-    ProgressEvent,
-    ProgressPhase,
+    Event,
+    MetricSnapshot,
+    Phase,
 };
 use qubit_rayon_batch::{
     RayonBatchExecutor,
@@ -77,8 +77,8 @@ fn test_rayon_batch_executor_returns_progress_report_error() {
 /// # Panics
 ///
 /// Panics if the event does not carry exactly one counter.
-fn task_counter(event: &ProgressEvent) -> &ProgressCounter {
-    match event.counters() {
+fn task_counter(event: &Event) -> &MetricSnapshot {
+    match event.metrics() {
         [counter] => counter,
         counters => panic!(
             "progress event should contain exactly one task counter, got {}",
@@ -565,30 +565,32 @@ fn test_rayon_batch_executor_reports_progress() {
     assert_eq!(result.completed_count(), 4);
     assert_eq!(result.failed_count(), 1);
     assert!(matches!(events.first(), Some(event)
-        if event.phase() == ProgressPhase::Started
-            && task_counter(event).total_count() == Some(4)
+        if event.phase() == Phase::Started
+            && task_counter(event).total() == Some(4)
     ));
-    assert!(events.iter().any(|event| matches!(
-        event.phase(),
-        ProgressPhase::Running
-    ) && task_counter(event).total_count()
-        == Some(4)
-        && task_counter(event).active_count() > 0));
-    assert!(events.iter().any(|event| matches!(
-        event.phase(),
-        ProgressPhase::Running
-    )
-        && (task_counter(event).succeeded_count() > 0
-            || task_counter(event).failed_count() > 0)));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.phase(), Phase::Running)
+                && task_counter(event).total() == Some(4)
+                && task_counter(event).active() > 0)
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.phase(), Phase::Running)
+                && (task_counter(event).succeeded() > 0
+                    || task_counter(event).failed() > 0))
+    );
     assert!(events.iter().all(|event| match event {
-        event if event.phase() == ProgressPhase::Running =>
-            task_counter(event).active_count() <= 2,
+        event if event.phase() == Phase::Running =>
+            task_counter(event).active() <= 2,
         _ => true,
     }));
     assert!(matches!(events.last(), Some(event)
-        if event.phase() == ProgressPhase::Failed
-            && task_counter(event).total_count() == Some(4)
-            && task_counter(event).completed_count() == 4
+        if event.phase() == Phase::Failed
+            && task_counter(event).total() == Some(4)
+            && task_counter(event).completed() == 4
     ));
 }
 
@@ -615,15 +617,11 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
 
     assert_eq!(result.completed_count(), 3);
     assert_eq!(result.failed_count(), 1);
-    assert!(
-        events
-            .iter()
-            .any(|event| event.phase() == ProgressPhase::Running)
-    );
+    assert!(events.iter().any(|event| event.phase() == Phase::Running));
     assert!(matches!(events.last(), Some(event)
-        if event.phase() == ProgressPhase::Failed
-            && task_counter(event).completed_count() == 3
-            && task_counter(event).failed_count() == 1
+        if event.phase() == Phase::Failed
+            && task_counter(event).completed() == 3
+            && task_counter(event).failed() == 1
     ));
 }
 
@@ -658,9 +656,9 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
         }
     ));
     assert!(matches!(events.last(), Some(event)
-        if event.phase() == ProgressPhase::Failed
-            && task_counter(event).total_count() == Some(2)
-            && task_counter(event).completed_count() == 2
+        if event.phase() == Phase::Failed
+            && task_counter(event).total() == Some(2)
+            && task_counter(event).completed() == 2
     ));
 }
 
