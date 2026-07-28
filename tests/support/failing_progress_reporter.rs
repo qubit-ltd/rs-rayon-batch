@@ -14,9 +14,9 @@ use std::{
 };
 
 use qubit_progress::{
-    ProgressEvent,
-    ProgressReportError,
-    ProgressReporter,
+    Event,
+    ReportError,
+    Reporter,
 };
 
 /// Progress reporter that fails after a configured number of successful calls.
@@ -35,17 +35,16 @@ impl FailingProgressReporter {
     }
 }
 
-impl ProgressReporter for FailingProgressReporter {
+impl Reporter for FailingProgressReporter {
     /// Accepts the configured prefix, then returns a synthetic I/O error.
-    fn report(
-        &self,
-        _event: &ProgressEvent,
-    ) -> Result<(), ProgressReportError> {
+    fn report(&self, _event: &Event) -> Result<(), ReportError> {
         let call_index = self.call_count.fetch_add(1, Ordering::AcqRel);
         if call_index < self.successful_calls {
             Ok(())
         } else {
-            Err(io::Error::other("synthetic progress report failure").into())
+            Err(ReportError::new(io::Error::other(
+                "synthetic progress report failure",
+            )))
         }
     }
 }

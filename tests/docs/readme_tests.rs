@@ -54,7 +54,7 @@ fn test_readme_mentions_current_executor_type() {
 #[test]
 /// Ensures Rayon progress reporting uses the shared scoped progress guard.
 fn test_rayon_progress_reporting_uses_scoped_progress_guard() {
-    assert!(RAYON_BATCH_EXECUTOR.contains("spawn_running_reporter"));
+    assert!(RAYON_BATCH_EXECUTOR.contains("spawn_auto_reporter"));
     assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop"));
 }
 

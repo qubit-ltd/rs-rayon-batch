@@ -11,8 +11,8 @@ use std::{
 };
 
 use qubit_progress::{
-    NoOpProgressReporter,
-    ProgressReporter,
+    NoopReporter,
+    Reporter,
 };
 
 use crate::{
@@ -32,7 +32,7 @@ pub struct RayonBatchExecutorBuilder {
     /// Minimum interval between due-based running progress callbacks.
     pub(crate) report_interval: Duration,
     /// Reporter receiving batch lifecycle callbacks.
-    pub(crate) reporter: Arc<dyn ProgressReporter>,
+    pub(crate) reporter: Arc<dyn Reporter>,
     /// Prefix used when naming Rayon worker threads.
     pub(crate) thread_name_prefix: String,
     /// Optional worker stack size in bytes.
@@ -100,7 +100,7 @@ impl RayonBatchExecutorBuilder {
     #[inline]
     pub fn reporter<R>(mut self, reporter: R) -> Self
     where
-        R: ProgressReporter + 'static,
+        R: Reporter + 'static,
     {
         self.reporter = Arc::new(reporter);
         self
@@ -116,7 +116,7 @@ impl RayonBatchExecutorBuilder {
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn reporter_arc(mut self, reporter: Arc<dyn ProgressReporter>) -> Self {
+    pub fn reporter_arc(mut self, reporter: Arc<dyn Reporter>) -> Self {
         self.reporter = reporter;
         self
     }
@@ -128,7 +128,7 @@ impl RayonBatchExecutorBuilder {
     /// This builder for fluent configuration.
     #[inline]
     pub fn no_reporter(mut self) -> Self {
-        self.reporter = Arc::new(NoOpProgressReporter);
+        self.reporter = Arc::new(NoopReporter);
         self
     }
 
@@ -210,7 +210,7 @@ impl Default for RayonBatchExecutorBuilder {
             sequential_threshold:
                 RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
             report_interval: RayonBatchExecutor::DEFAULT_REPORT_INTERVAL,
-            reporter: Arc::new(NoOpProgressReporter),
+            reporter: Arc::new(NoopReporter),
             thread_name_prefix: DEFAULT_THREAD_NAME_PREFIX.to_owned(),
             stack_size: None,
         }
