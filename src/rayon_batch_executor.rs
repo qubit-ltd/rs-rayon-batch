@@ -24,6 +24,7 @@ use qubit_batch::{
     BatchExecutionState,
     BatchExecutor,
     BatchOutcome,
+    BatchOutcomeBuilder,
     EXECUTION_PROGRESS_METRIC_ID,
     EXECUTION_PROGRESS_METRIC_NAME,
     SequentialBatchExecutor,
@@ -272,7 +273,6 @@ impl BatchExecutor for RayonBatchExecutor {
             return sequential.execute_with_count(tasks, count);
         }
 
-        let state = Arc::new(BatchExecutionState::new(count));
         let mut progress = match Progress::builder(self.reporter.as_ref())
             .interval(self.report_interval)
             .metric(
@@ -286,24 +286,24 @@ impl BatchExecutor for RayonBatchExecutor {
         {
             Ok(progress) => progress,
             Err(source) => {
-                let state = Arc::into_inner(state).expect(
-                    "rayon batch execution state should have a single owner",
-                );
                 return Err(BatchExecutionError::ProgressReport {
                     source,
-                    outcome: state.into_outcome(Duration::ZERO),
+                    outcome: BatchOutcomeBuilder::builder(count)
+                        .elapsed(Duration::ZERO)
+                        .build()
+                        .expect("empty batch outcome must be valid"),
                 });
             }
         };
+        let metric = progress
+            .metric(EXECUTION_PROGRESS_METRIC_ID)
+            .expect("configured execution metric must exist");
+        let state = Arc::new(BatchExecutionState::new(count, metric));
         let mut observed_count = 0usize;
         let worker_count = self.thread_count.min(count);
 
         let running_result = thread::scope(|thread_scope| {
-            let reporter_state = Arc::clone(&state);
-            let running_progress =
-                progress.spawn_auto_reporter(thread_scope, move |snapshot| {
-                    reporter_state.configure_progress(snapshot);
-                });
+            let running_progress = progress.spawn_auto_reporter(thread_scope);
             let running_point_handle = running_progress.notifier();
             let running_status = running_progress.status();
 
@@ -360,9 +360,7 @@ impl BatchExecutor for RayonBatchExecutor {
             });
         }
         if observed_count < count {
-            let (elapsed, report_error) = match progress.fail(|snapshot| {
-                state.configure_progress(snapshot);
-            }) {
+            let (elapsed, report_error) = match progress.fail() {
                 Ok(elapsed) => (elapsed, None),
                 Err(source) => {
                     let elapsed = source.elapsed();
@@ -377,9 +375,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 report_error,
             })
         } else if observed_count > count {
-            let (elapsed, report_error) = match progress.fail(|snapshot| {
-                state.configure_progress(snapshot);
-            }) {
+            let (elapsed, report_error) = match progress.fail() {
                 Ok(elapsed) => (elapsed, None),
                 Err(source) => {
                     let elapsed = source.elapsed();
@@ -395,13 +391,9 @@ impl BatchExecutor for RayonBatchExecutor {
             })
         } else {
             let terminal = if state.failure_count() > 0 {
-                progress.fail(|snapshot| {
-                    state.configure_progress(snapshot);
-                })
+                progress.fail()
             } else {
-                progress.finish(|snapshot| {
-                    state.configure_progress(snapshot);
-                })
+                progress.finish()
             };
             let terminal = match terminal {
                 Ok(elapsed) => elapsed,
