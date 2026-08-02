@@ -5,16 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    panic::panic_any,
-    sync::Mutex,
-};
+use std::{panic::panic_any, sync::Mutex};
 
-use qubit_progress::{
-    Event,
-    Phase,
-    Reporter,
-};
+use qubit_progress::{Event, Phase, Reporter};
 
 /// Progress callback that should panic during a test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +52,7 @@ impl RecordingProgressReporter {
 }
 
 impl Reporter for RecordingProgressReporter {
-    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReportError> {
+    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReporterError> {
         self.events
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -109,17 +102,11 @@ impl PanickingProgressReporter {
 }
 
 impl Reporter for PanickingProgressReporter {
-    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReportError> {
+    fn report(&self, event: &Event) -> Result<(), qubit_progress::ReporterError> {
         match event.phase() {
-            Phase::Started => {
-                self.panic_if_configured(ProgressPanicPhase::Start)
-            }
-            Phase::Running => {
-                self.panic_if_configured(ProgressPanicPhase::Process)
-            }
-            Phase::Succeeded => {
-                self.panic_if_configured(ProgressPanicPhase::Finish)
-            }
+            Phase::Started => self.panic_if_configured(ProgressPanicPhase::Start),
+            Phase::Running => self.panic_if_configured(ProgressPanicPhase::Process),
+            Phase::Succeeded => self.panic_if_configured(ProgressPanicPhase::Finish),
             Phase::Failed | Phase::Cancelled => {}
         }
         Ok(())

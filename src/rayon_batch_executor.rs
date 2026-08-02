@@ -7,43 +7,23 @@
 // =============================================================================
 use std::{
     sync::{
-        Arc,
-        Mutex,
-        PoisonError,
-        mpsc::{
-            self,
-            Receiver,
-        },
+        Arc, Mutex, PoisonError,
+        mpsc::{self, Receiver},
     },
     thread,
     time::Duration,
 };
 
 use qubit_batch::{
-    BatchExecutionError,
-    BatchExecutionState,
-    BatchExecutor,
-    BatchOutcome,
-    BatchOutcomeBuilder,
-    EXECUTION_PROGRESS_METRIC_ID,
-    EXECUTION_PROGRESS_METRIC_NAME,
-    SequentialBatchExecutor,
+    BatchExecutionError, BatchExecutionState, BatchExecutor, BatchOutcome, BatchOutcomeBuilder,
+    EXECUTION_PROGRESS_METRIC_ID, EXECUTION_PROGRESS_METRIC_NAME, SequentialBatchExecutor,
     TaskFailurePolicy,
 };
 use qubit_function::Runnable;
-use qubit_progress::{
-    Metric,
-    Notifier,
-    Progress,
-    Reporter,
-    Status,
-};
+use qubit_progress::{AutoReporterStatus, Metric, Progress, ProgressNotifier, Reporter};
 use rayon::ThreadPool as RayonThreadPool;
 
-use crate::{
-    RayonBatchExecutorBuildError,
-    RayonBatchExecutorBuilder,
-};
+use crate::{RayonBatchExecutorBuildError, RayonBatchExecutorBuilder};
 
 /// Indexed task sent to Rayon worker loops.
 struct RayonWorkItem<T> {
@@ -136,9 +116,7 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(
-        thread_count: usize,
-    ) -> Result<Self, RayonBatchExecutorBuildError> {
+    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
         Self::builder().thread_count(thread_count).build()
     }
 
@@ -276,18 +254,15 @@ impl BatchExecutor for RayonBatchExecutor {
         let mut progress = match Progress::builder(self.reporter.as_ref())
             .interval(self.report_interval)
             .metric(
-                Metric::new(
-                    EXECUTION_PROGRESS_METRIC_ID,
-                    EXECUTION_PROGRESS_METRIC_NAME,
-                )
-                .total(count as u64),
+                Metric::new(EXECUTION_PROGRESS_METRIC_ID, EXECUTION_PROGRESS_METRIC_NAME)
+                    .total(count as u64),
             )
             .start()
         {
             Ok(progress) => progress,
             Err(source) => {
                 return Err(BatchExecutionError::ProgressReport {
-                    source,
+                    source: Box::new(qubit_batch::ProgressFailure::from(source)),
                     outcome: BatchOutcomeBuilder::builder(count)
                         .elapsed(Duration::ZERO)
                         .build()
@@ -308,8 +283,7 @@ impl BatchExecutor for RayonBatchExecutor {
             let running_status = running_progress.status();
 
             self.pool.in_place_scope_fifo(|scope| {
-                let (work_sender, work_receiver) =
-                    mpsc::sync_channel(worker_count);
+                let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                 let work_receiver = Arc::new(Mutex::new(work_receiver));
                 for _ in 0..worker_count {
                     let worker_receiver = Arc::clone(&work_receiver);
@@ -351,11 +325,11 @@ impl BatchExecutor for RayonBatchExecutor {
             running_progress.stop()
         });
 
-        let state = Arc::into_inner(state)
-            .expect("rayon batch execution state should have a single owner");
+        let state =
+            Arc::into_inner(state).expect("rayon batch execution state should have a single owner");
         if let Err(source) = running_result {
             return Err(BatchExecutionError::ProgressReport {
-                source,
+                source: Box::new(qubit_batch::ProgressFailure::from(source)),
                 outcome: state.into_outcome(progress.elapsed()),
             });
         }
@@ -364,7 +338,10 @@ impl BatchExecutor for RayonBatchExecutor {
                 Ok(elapsed) => (elapsed, None),
                 Err(source) => {
                     let elapsed = source.elapsed();
-                    (elapsed, Some(Box::new(source.into_progress_error())))
+                    (
+                        elapsed,
+                        Some(Box::new(qubit_batch::ProgressFailure::from(source))),
+                    )
                 }
             };
             let result = state.into_outcome(elapsed);
@@ -379,7 +356,10 @@ impl BatchExecutor for RayonBatchExecutor {
                 Ok(elapsed) => (elapsed, None),
                 Err(source) => {
                     let elapsed = source.elapsed();
-                    (elapsed, Some(Box::new(source.into_progress_error())))
+                    (
+                        elapsed,
+                        Some(Box::new(qubit_batch::ProgressFailure::from(source))),
+                    )
                 }
             };
             let result = state.into_outcome(elapsed);
@@ -390,17 +370,20 @@ impl BatchExecutor for RayonBatchExecutor {
                 report_error,
             })
         } else {
+            let progress_elapsed = progress.elapsed();
             let terminal = if state.failure_count() > 0 {
-                progress.fail()
+                progress.fail().map_err(qubit_batch::ProgressFailure::from)
             } else {
-                progress.finish()
+                progress
+                    .finish()
+                    .map_err(qubit_batch::ProgressFailure::from_finish_error)
             };
             let terminal = match terminal {
                 Ok(elapsed) => elapsed,
                 Err(source) => {
-                    let elapsed = source.elapsed();
+                    let elapsed = source.elapsed().unwrap_or(progress_elapsed);
                     return Err(BatchExecutionError::ProgressReport {
-                        source: source.into_progress_error(),
+                        source: Box::new(source),
                         outcome: state.into_outcome(elapsed),
                     });
                 }
@@ -422,8 +405,8 @@ impl BatchExecutor for RayonBatchExecutor {
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
     state: Arc<BatchExecutionState<E>>,
-    progress_point_handle: Notifier,
-    progress_status: Status,
+    progress_point_handle: ProgressNotifier,
+    progress_status: AutoReporterStatus,
 ) where
     T: Runnable<E> + Send,
     E: Send,
