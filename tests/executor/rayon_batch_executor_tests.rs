@@ -23,11 +23,9 @@ use std::{
     time::Duration,
 };
 
-use qubit_batch::{
-    BatchExecutionError,
-    BatchExecutor,
-};
+use qubit_batch::{BatchExecutionError, BatchExecutor, ProgressFailure};
 use qubit_progress::{
+    AutoReporterError,
     Event,
     MetricSnapshot,
     Phase,
@@ -705,12 +703,16 @@ fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_p
         .map(|_| TestTask::sleep_success(Duration::from_millis(10)))
         .collect::<Vec<_>>();
 
-    let payload = catch_unwind(AssertUnwindSafe(|| {
-        executor.execute_with_count(tasks, 2)
-    }))
-    .expect_err("zero-interval progress reporter panic should be propagated");
-
-    assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
+    let error = executor
+        .execute_with_count(tasks, 2)
+        .expect_err("zero-interval progress reporter panic should be returned");
+    let BatchExecutionError::ProgressReport { source, .. } = error else {
+        panic!("progress reporter panic should be a progress report error");
+    };
+    let ProgressFailure::AutoReporter(AutoReporterError::Panicked(panic)) = source.as_ref() else {
+        panic!("progress reporter panic should preserve structured panic information");
+    };
+    assert_eq!(panic.message(), Some(PANIC_MESSAGE));
 }
 
 #[test]
@@ -730,12 +732,16 @@ fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
         .map(|_| TestTask::sleep_success(Duration::from_millis(50)))
         .collect::<Vec<_>>();
 
-    let payload = catch_unwind(AssertUnwindSafe(|| {
-        executor.execute_with_count(tasks, 2)
-    }))
-    .expect_err("progress reporter panic should be propagated");
-
-    assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
+    let error = executor
+        .execute_with_count(tasks, 2)
+        .expect_err("progress reporter panic should be returned");
+    let BatchExecutionError::ProgressReport { source, .. } = error else {
+        panic!("progress reporter panic should be a progress report error");
+    };
+    let ProgressFailure::AutoReporter(AutoReporterError::Panicked(panic)) = source.as_ref() else {
+        panic!("progress reporter panic should preserve structured panic information");
+    };
+    assert_eq!(panic.message(), Some(PANIC_MESSAGE));
 }
 
 #[test]
