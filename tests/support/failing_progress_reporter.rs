@@ -7,17 +7,10 @@
 // =============================================================================
 use std::{
     io,
-    sync::atomic::{
-        AtomicUsize,
-        Ordering,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
-use qubit_progress::{
-    Event,
-    ReportError,
-    Reporter,
-};
+use qubit_progress::{Event, Reporter, ReporterError};
 
 /// Progress reporter that fails after a configured number of successful calls.
 pub struct FailingProgressReporter {
@@ -37,12 +30,12 @@ impl FailingProgressReporter {
 
 impl Reporter for FailingProgressReporter {
     /// Accepts the configured prefix, then returns a synthetic I/O error.
-    fn report(&self, _event: &Event) -> Result<(), ReportError> {
+    fn report(&self, _event: &Event) -> Result<(), ReporterError> {
         let call_index = self.call_count.fetch_add(1, Ordering::AcqRel);
         if call_index < self.successful_calls {
             Ok(())
         } else {
-            Err(ReportError::new(io::Error::other(
+            Err(ReporterError::new(io::Error::other(
                 "synthetic progress report failure",
             )))
         }
