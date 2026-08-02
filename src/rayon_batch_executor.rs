@@ -230,8 +230,9 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// # Panics
     ///
-    /// Panics from tasks are captured in the result. Panics from the configured
-    /// progress reporter are propagated to the caller.
+    /// Panics from tasks are captured in the result. Panics from synchronous
+    /// progress callbacks are propagated to the caller; panics from the
+    /// scoped running reporter are returned as [`qubit_batch::ProgressFailure`].
     fn execute_with_count<T, E, I>(
         &self,
         tasks: I,
