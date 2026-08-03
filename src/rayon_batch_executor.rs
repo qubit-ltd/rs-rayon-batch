@@ -252,7 +252,7 @@ impl BatchExecutor for RayonBatchExecutor {
             return sequential.execute_with_count(tasks, count);
         }
 
-        let mut progress = match Progress::builder(self.reporter.as_ref())
+        let mut progress = match Progress::builder_arc(Arc::clone(&self.reporter))
             .interval(self.report_interval)
             .metric(
                 Metric::new(EXECUTION_PROGRESS_METRIC_ID, EXECUTION_PROGRESS_METRIC_NAME)
