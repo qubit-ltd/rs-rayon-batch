@@ -52,7 +52,8 @@ fn test_readme_mentions_current_executor_type() {
 #[test]
 /// Ensures Rayon progress reporting uses the shared parallel execution driver.
 fn test_rayon_progress_reporting_uses_the_parallel_execution_driver() {
-    assert!(RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecution::run"));
+    assert!(RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecutionCoordinator::new"));
+    assert!(RAYON_BATCH_EXECUTOR.contains("coordinator.execute"));
     assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop"));
 }
 
