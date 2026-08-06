@@ -15,7 +15,7 @@ use std::{
 };
 
 use qubit_batch::{
-    BatchExecutionError, BatchExecutor, BatchOutcome, ParallelBatchExecution,
+    BatchExecutionError, BatchExecutor, BatchOutcome, ParallelBatchExecutionCoordinator,
     ParallelBatchExecutionContext, SequentialBatchExecutor, TaskFailurePolicy,
 };
 use qubit_function::Runnable;
@@ -65,10 +65,8 @@ pub struct RayonBatchExecutor {
     thread_count: usize,
     /// Maximum batch size that still uses sequential execution.
     sequential_threshold: usize,
-    /// Interval between progress callbacks while a batch is running.
-    report_interval: Duration,
-    /// Reporter receiving batch lifecycle callbacks.
-    reporter: Arc<dyn Reporter>,
+    /// Shared coordinator used for parallel execution flow.
+    coordinator: ParallelBatchExecutionCoordinator,
 }
 
 impl RayonBatchExecutor {
@@ -145,8 +143,10 @@ impl RayonBatchExecutor {
             pool: Arc::new(pool),
             thread_count: builder.thread_count,
             sequential_threshold: builder.sequential_threshold,
-            report_interval: builder.report_interval,
-            reporter: builder.reporter,
+            coordinator: ParallelBatchExecutionCoordinator::new(
+                builder.reporter,
+                builder.report_interval,
+            ),
         }
     }
 
@@ -177,7 +177,7 @@ impl RayonBatchExecutor {
     /// The minimum interval between progress callbacks.
     #[inline]
     pub const fn report_interval(&self) -> Duration {
-        self.report_interval
+        self.coordinator.report_interval()
     }
 
     /// Returns the progress reporter used by this executor.
@@ -187,7 +187,7 @@ impl RayonBatchExecutor {
     /// A shared reference to the configured progress reporter.
     #[inline]
     pub fn reporter(&self) -> &Arc<dyn Reporter> {
-        &self.reporter
+        &self.coordinator.reporter()
     }
 }
 
@@ -245,19 +245,17 @@ impl BatchExecutor for RayonBatchExecutor {
     {
         if count <= self.sequential_threshold || self.thread_count <= 1 {
             let sequential = SequentialBatchExecutor::builder()
-                .report_interval(self.report_interval)
-                .reporter_arc(Arc::clone(&self.reporter))
+                .report_interval(self.coordinator.report_interval())
+                .reporter_arc(Arc::clone(self.coordinator.reporter()))
                 .task_failure_policy(TaskFailurePolicy::Continue)
                 .build();
             return sequential.execute_with_count(tasks, count);
         }
 
         let worker_count = self.thread_count.min(count);
-        ParallelBatchExecution::run(
+        self.coordinator.execute(
             tasks,
             count,
-            Arc::clone(&self.reporter),
-            self.report_interval,
             move |tasks, count, context| {
                 self.pool.in_place_scope_fifo(|scope| {
                     let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
@@ -327,6 +325,5 @@ fn run_rayon_worker<T, E>(
         context
             .execute_task(index, task)
             .expect("producer must assign an in-range task index");
-        context.notify_task_terminal();
     }
 }
