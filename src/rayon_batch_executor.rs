@@ -15,12 +15,11 @@ use std::{
 };
 
 use qubit_batch::{
-    BatchExecutionError, BatchExecutionState, BatchExecutor, BatchOutcome, BatchOutcomeBuilder,
-    EXECUTION_PROGRESS_METRIC_ID, EXECUTION_PROGRESS_METRIC_NAME, SequentialBatchExecutor,
-    TaskFailurePolicy,
+    BatchExecutionError, BatchExecutor, BatchOutcome, ParallelBatchExecution,
+    ParallelBatchExecutionContext, SequentialBatchExecutor, TaskFailurePolicy,
 };
 use qubit_function::Runnable;
-use qubit_progress::{AutoReporterStatus, Metric, Progress, ProgressNotifier, Reporter};
+use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
 
 use crate::{RayonBatchExecutorBuildError, RayonBatchExecutorBuilder};
@@ -220,13 +219,14 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// # Returns
     ///
-    /// A structured batch result when the declared task count matches, or a
-    /// batch-count mismatch error with the attached partial result.
+    /// A structured batch result when reporting and count validation succeed,
+    /// or a batch-level error with the attached partial result.
     ///
     /// # Errors
     ///
-    /// Returns [`BatchExecutionError`] when `tasks` yields fewer or more tasks
-    /// than `count`.
+    /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails, or
+    /// a count-mismatch variant when `tasks` yields fewer or more tasks than
+    /// `count`.
     ///
     /// # Panics
     ///
@@ -252,151 +252,49 @@ impl BatchExecutor for RayonBatchExecutor {
             return sequential.execute_with_count(tasks, count);
         }
 
-        let mut progress = match Progress::builder_arc(Arc::clone(&self.reporter))
-            .interval(self.report_interval)
-            .metric(
-                Metric::new(EXECUTION_PROGRESS_METRIC_ID, EXECUTION_PROGRESS_METRIC_NAME)
-                    .total(count as u64),
-            )
-            .start()
-        {
-            Ok(progress) => progress,
-            Err(source) => {
-                return Err(BatchExecutionError::ProgressReport {
-                    source: Box::new(qubit_batch::ProgressFailure::from(source)),
-                    outcome: BatchOutcomeBuilder::builder(count)
-                        .elapsed(Duration::ZERO)
-                        .build()
-                        .expect("empty batch outcome must be valid"),
-                });
-            }
-        };
-        let metric = progress
-            .metric(EXECUTION_PROGRESS_METRIC_ID)
-            .expect("configured execution metric must exist");
-        let state = Arc::new(BatchExecutionState::new(count, metric));
-        let mut observed_count = 0usize;
         let worker_count = self.thread_count.min(count);
-
-        let running_result = thread::scope(|thread_scope| {
-            let running_progress = progress.spawn_auto_reporter(thread_scope);
-            let running_point_handle = running_progress.notifier();
-            let running_status = running_progress.status();
-
-            self.pool.in_place_scope_fifo(|scope| {
-                let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
-                let work_receiver = Arc::new(Mutex::new(work_receiver));
-                for _ in 0..worker_count {
-                    let worker_receiver = Arc::clone(&work_receiver);
-                    let worker_state = Arc::clone(&state);
-                    let running_point_handle = running_point_handle.clone();
-                    let running_status = running_status.clone();
-                    scope.spawn_fifo(move |_| {
-                        run_rayon_worker(
-                            worker_receiver,
-                            worker_state,
-                            running_point_handle,
-                            running_status,
-                        );
-                    });
-                }
-                drop(work_receiver);
-
-                for task in tasks {
-                    if running_status.is_failed() {
-                        break;
+        ParallelBatchExecution::run(
+            tasks,
+            count,
+            Arc::clone(&self.reporter),
+            self.report_interval,
+            move |tasks, count, context| {
+                self.pool.in_place_scope_fifo(|scope| {
+                    let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
+                    let work_receiver = Arc::new(Mutex::new(work_receiver));
+                    for _ in 0..worker_count {
+                        let worker_receiver = Arc::clone(&work_receiver);
+                        let worker_context = &context;
+                        scope.spawn_fifo(move |_| {
+                            run_rayon_worker(worker_receiver, worker_context);
+                        });
                     }
-                    observed_count = state.record_task_observed();
-                    if observed_count > count {
-                        break;
-                    }
-                    if work_sender
-                        .send(RayonWorkItem {
-                            index: observed_count - 1,
-                            task,
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                drop(work_sender);
-            });
+                    drop(work_receiver);
 
-            running_progress.stop()
-        });
-
-        let state =
-            Arc::into_inner(state).expect("rayon batch execution state should have a single owner");
-        if let Err(source) = running_result {
-            return Err(BatchExecutionError::ProgressReport {
-                source: Box::new(qubit_batch::ProgressFailure::from(source)),
-                outcome: state.into_outcome(progress.elapsed()),
-            });
-        }
-        if observed_count < count {
-            let (elapsed, report_error) = match progress.fail() {
-                Ok(elapsed) => (elapsed, None),
-                Err(source) => {
-                    let elapsed = source.elapsed();
-                    (
-                        elapsed,
-                        Some(Box::new(qubit_batch::ProgressFailure::from(source))),
-                    )
-                }
-            };
-            let result = state.into_outcome(elapsed);
-            Err(BatchExecutionError::CountShortfall {
-                expected: count,
-                actual: observed_count,
-                outcome: result,
-                report_error,
-            })
-        } else if observed_count > count {
-            let (elapsed, report_error) = match progress.fail() {
-                Ok(elapsed) => (elapsed, None),
-                Err(source) => {
-                    let elapsed = source.elapsed();
-                    (
-                        elapsed,
-                        Some(Box::new(qubit_batch::ProgressFailure::from(source))),
-                    )
-                }
-            };
-            let result = state.into_outcome(elapsed);
-            Err(BatchExecutionError::CountExceeded {
-                expected: count,
-                observed_at_least: observed_count,
-                outcome: result,
-                report_error,
-            })
-        } else {
-            let terminal = if state.failure_count() > 0 {
-                progress.fail().map_err(|source| {
-                    (source.elapsed(), qubit_batch::ProgressFailure::from(source))
+                    let mut observed_count = 0usize;
+                    for task in tasks {
+                        if context.reporting_failed() {
+                            break;
+                        }
+                        observed_count = context.record_task_observed();
+                        if observed_count > count {
+                            break;
+                        }
+                        if work_sender
+                            .send(RayonWorkItem {
+                                index: observed_count - 1,
+                                task,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    drop(work_sender);
+                    observed_count
                 })
-            } else {
-                progress
-                    .finish()
-                    .map_err(|source| {
-                        (
-                            source.elapsed(),
-                            qubit_batch::ProgressFailure::from_finish_error(source),
-                        )
-                    })
-            };
-            let terminal = match terminal {
-                Ok(elapsed) => elapsed,
-                Err((elapsed, source)) => {
-                    return Err(BatchExecutionError::ProgressReport {
-                        source: Box::new(source),
-                        outcome: state.into_outcome(elapsed),
-                    });
-                }
-            };
-            let result = state.into_outcome(terminal);
-            Ok(result)
-        }
+            },
+        )
     }
 }
 
@@ -410,9 +308,7 @@ impl BatchExecutor for RayonBatchExecutor {
 /// * `progress_point_handle` - Worker-side progress-point handle.
 fn run_rayon_worker<T, E>(
     work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
-    state: Arc<BatchExecutionState<E>>,
-    progress_point_handle: ProgressNotifier,
-    progress_status: AutoReporterStatus,
+    context: &ParallelBatchExecutionContext<E>,
 ) where
     T: Runnable<E> + Send,
     E: Send,
@@ -425,12 +321,12 @@ fn run_rayon_worker<T, E>(
         let Ok(RayonWorkItem { index, task }) = received else {
             break;
         };
-        if progress_status.is_failed() {
+        if context.reporting_failed() {
             break;
         }
-        state
+        context
             .execute_task(index, task)
             .expect("producer must assign an in-range task index");
-        progress_point_handle.notify();
+        context.notify_task_terminal();
     }
 }

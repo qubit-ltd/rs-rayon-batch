@@ -8,41 +8,21 @@
 //! Tests for [`RayonBatchExecutor`](qubit_rayon_batch::RayonBatchExecutor).
 
 use std::{
-    panic::{
-        AssertUnwindSafe,
-        catch_unwind,
-        panic_any,
-    },
+    panic::{AssertUnwindSafe, catch_unwind, panic_any},
     sync::{
         Arc,
-        atomic::{
-            AtomicUsize,
-            Ordering,
-        },
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use qubit_batch::{BatchExecutionError, BatchExecutor, ProgressFailure};
-use qubit_progress::{
-    AutoReporterError,
-    Event,
-    MetricSnapshot,
-    Phase,
-};
-use qubit_rayon_batch::{
-    RayonBatchExecutor,
-    RayonBatchExecutorBuildError,
-};
+use qubit_progress::{AutoReporterError, Event, MetricSnapshot, Phase};
+use qubit_rayon_batch::{RayonBatchExecutor, RayonBatchExecutorBuildError};
 
 use crate::support::{
-    FailingProgressReporter,
-    PanickingProgressReporter,
-    ProgressPanicPhase,
-    RecordingProgressReporter,
-    TestCallable,
-    TestTask,
-    panic_payload_message,
+    FailingProgressReporter, PanickingProgressReporter, ProgressPanicPhase,
+    RecordingProgressReporter, TestCallable, TestTask, panic_payload_message,
 };
 
 #[test]
@@ -137,8 +117,7 @@ fn test_rayon_batch_executor_build_reports_thread_pool_failure() {
 
 #[test]
 fn test_rayon_batch_executor_new_default_and_accessors() {
-    let executor =
-        RayonBatchExecutor::new(2).expect("rayon batch executor should build");
+    let executor = RayonBatchExecutor::new(2).expect("rayon batch executor should build");
     let default_executor = RayonBatchExecutor::default();
 
     assert!(RayonBatchExecutor::default_thread_count() >= 1);
@@ -396,8 +375,7 @@ fn test_rayon_batch_executor_reports_count_shortfall() {
 }
 
 #[test]
-fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation()
-{
+fn test_rayon_batch_executor_handles_huge_declared_count_without_preallocation() {
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(1)
@@ -577,12 +555,10 @@ fn test_rayon_batch_executor_reports_progress() {
         events
             .iter()
             .any(|event| matches!(event.phase(), Phase::Running)
-                && (task_counter(event).succeeded() > 0
-                    || task_counter(event).failed() > 0))
+                && (task_counter(event).succeeded() > 0 || task_counter(event).failed() > 0))
     );
     assert!(events.iter().all(|event| match event {
-        event if event.phase() == Phase::Running =>
-            task_counter(event).active() <= 2,
+        event if event.phase() == Phase::Running => task_counter(event).active() <= 2,
         _ => true,
     }));
     assert!(matches!(events.last(), Some(event)
@@ -624,8 +600,7 @@ fn test_rayon_batch_executor_reports_progress_with_zero_interval() {
 }
 
 #[test]
-fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exceeded()
- {
+fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exceeded() {
     let reporter = Arc::new(RecordingProgressReporter::new());
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
@@ -661,8 +636,7 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
 }
 
 #[test]
-fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop()
- {
+fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
     const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
@@ -677,17 +651,14 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
         TestTask::sleep_success(Duration::from_millis(5))
     });
 
-    let payload = catch_unwind(AssertUnwindSafe(|| {
-        executor.execute_with_count(tasks, 3)
-    }))
-    .expect_err("iterator panic should be propagated");
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 3)))
+        .expect_err("iterator panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
 }
 
 #[test]
-fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_panic()
- {
+fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_panic() {
     const PANIC_MESSAGE: &str = "zero interval progress reporter process panic";
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
@@ -758,10 +729,8 @@ fn test_rayon_batch_executor_propagates_progress_reporter_start_panic() {
         .expect("rayon batch executor should build");
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
-    let payload = catch_unwind(AssertUnwindSafe(|| {
-        executor.execute_with_count(tasks, 2)
-    }))
-    .expect_err("progress reporter start panic should be propagated");
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
+        .expect_err("progress reporter start panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
 }
@@ -780,10 +749,8 @@ fn test_rayon_batch_executor_propagates_progress_reporter_finish_panic() {
         .expect("rayon batch executor should build");
     let tasks = vec![TestTask::succeed(), TestTask::succeed()];
 
-    let payload = catch_unwind(AssertUnwindSafe(|| {
-        executor.execute_with_count(tasks, 2)
-    }))
-    .expect_err("progress reporter finish panic should be propagated");
+    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 2)))
+        .expect_err("progress reporter finish panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
 }
