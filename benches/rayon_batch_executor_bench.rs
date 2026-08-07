@@ -9,8 +9,17 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use qubit_batch::{BatchExecutor, ParallelBatchExecutor, SequentialBatchExecutor};
+use criterion::{
+    BenchmarkId,
+    Criterion,
+    criterion_group,
+    criterion_main,
+};
+use qubit_batch::{
+    BatchExecutor,
+    ParallelBatchExecutor,
+    SequentialBatchExecutor,
+};
 use qubit_function::Runnable;
 use qubit_rayon_batch::RayonBatchExecutor;
 
@@ -80,7 +89,12 @@ fn benchmark_no_op_execution(criterion: &mut Criterion) {
 
     for task_count in BATCH_SIZES {
         benchmark_no_op_case(&mut group, "sequential", &sequential, task_count);
-        benchmark_no_op_case(&mut group, "scoped_parallel", &parallel, task_count);
+        benchmark_no_op_case(
+            &mut group,
+            "scoped_parallel",
+            &parallel,
+            task_count,
+        );
         benchmark_no_op_case(&mut group, "rayon", &rayon, task_count);
     }
     group.finish();
@@ -108,7 +122,12 @@ fn benchmark_cpu_execution(criterion: &mut Criterion) {
 
     for task_count in BATCH_SIZES {
         benchmark_cpu_case(&mut group, "sequential", &sequential, task_count);
-        benchmark_cpu_case(&mut group, "scoped_parallel", &parallel, task_count);
+        benchmark_cpu_case(
+            &mut group,
+            "scoped_parallel",
+            &parallel,
+            task_count,
+        );
         benchmark_cpu_case(&mut group, "rayon", &rayon, task_count);
     }
     group.finish();
@@ -137,7 +156,10 @@ fn benchmark_no_op_case<E>(
             bencher.iter(|| {
                 let _ = black_box(
                     executor
-                        .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
+                        .execute_with_count(
+                            (0..task_count).map(|_| NoOpTask),
+                            task_count,
+                        )
                         .expect("no-op batch should succeed"),
                 );
             });
@@ -169,7 +191,8 @@ fn benchmark_cpu_case<E>(
                 let _ = black_box(
                     executor
                         .execute_with_count(
-                            (0..task_count).map(|seed| CpuTask { seed: seed as u64 }),
+                            (0..task_count)
+                                .map(|seed| CpuTask { seed: seed as u64 }),
                             task_count,
                         )
                         .expect("CPU batch should succeed"),
