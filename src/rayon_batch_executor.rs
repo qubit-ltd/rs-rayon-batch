@@ -25,6 +25,7 @@ use qubit_batch::{
     BatchOutcome,
     ParallelBatchExecutionContext,
     ParallelBatchExecutionCoordinator,
+    ParallelBatchTask,
     SequentialBatchExecutor,
     TaskFailurePolicy,
 };
@@ -36,14 +37,6 @@ use crate::{
     RayonBatchExecutorBuildError,
     RayonBatchExecutorBuilder,
 };
-
-/// Indexed task sent to Rayon worker loops.
-struct RayonWorkItem<T> {
-    /// Zero-based task index within the declared batch.
-    index: usize,
-    /// Task payload.
-    task: T,
-}
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -270,7 +263,7 @@ impl BatchExecutor for RayonBatchExecutor {
 
         let worker_count = self.thread_count.min(count);
         self.coordinator
-            .execute(tasks, count, move |tasks, count, context| {
+            .execute(tasks, count, move |tasks, context| {
                 self.pool.in_place_scope_fifo(|scope| {
                     let (work_sender, work_receiver) =
                         mpsc::sync_channel(worker_count);
@@ -285,20 +278,10 @@ impl BatchExecutor for RayonBatchExecutor {
                     drop(work_receiver);
 
                     for task in tasks {
-                        if context.reporting_failed() {
+                        let Some(task) = context.accept_task(task) else {
                             break;
-                        }
-                        let observed_count = context.record_task_observed();
-                        if observed_count > count {
-                            break;
-                        }
-                        if work_sender
-                            .send(RayonWorkItem {
-                                index: observed_count - 1,
-                                task,
-                            })
-                            .is_err()
-                        {
+                        };
+                        if work_sender.send(task).is_err() {
                             break;
                         }
                     }
@@ -314,10 +297,8 @@ impl BatchExecutor for RayonBatchExecutor {
 ///
 /// * `work_receiver` - Shared task receiver protected because standard
 ///   receivers are not `Sync`.
-/// * `state` - Shared execution state updated by each task.
-/// * `progress_point_handle` - Worker-side progress-point handle.
 fn run_rayon_worker<T, E>(
-    work_receiver: Arc<Mutex<Receiver<RayonWorkItem<T>>>>,
+    work_receiver: Arc<Mutex<Receiver<ParallelBatchTask<T>>>>,
     context: &ParallelBatchExecutionContext<E>,
 ) where
     T: Runnable<E> + Send,
@@ -328,14 +309,9 @@ fn run_rayon_worker<T, E>(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .recv();
-        let Ok(RayonWorkItem { index, task }) = received else {
+        let Ok(task) = received else {
             break;
         };
-        if context.reporting_failed() {
-            break;
-        }
-        context
-            .execute_task(index, task)
-            .expect("producer must assign an in-range task index");
+        context.execute_task(task);
     }
 }
