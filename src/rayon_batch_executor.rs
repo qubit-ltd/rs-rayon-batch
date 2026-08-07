@@ -7,22 +7,35 @@
 // =============================================================================
 use std::{
     sync::{
-        Arc, Mutex, PoisonError,
-        mpsc::{self, Receiver},
+        Arc,
+        Mutex,
+        PoisonError,
+        mpsc::{
+            self,
+            Receiver,
+        },
     },
     thread,
     time::Duration,
 };
 
 use qubit_batch::{
-    BatchExecutionError, BatchExecutor, BatchOutcome, ParallelBatchExecutionCoordinator,
-    ParallelBatchExecutionContext, SequentialBatchExecutor, TaskFailurePolicy,
+    BatchExecutionError,
+    BatchExecutor,
+    BatchOutcome,
+    ParallelBatchExecutionContext,
+    ParallelBatchExecutionCoordinator,
+    SequentialBatchExecutor,
+    TaskFailurePolicy,
 };
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
 
-use crate::{RayonBatchExecutorBuildError, RayonBatchExecutorBuilder};
+use crate::{
+    RayonBatchExecutorBuildError,
+    RayonBatchExecutorBuilder,
+};
 
 /// Indexed task sent to Rayon worker loops.
 struct RayonWorkItem<T> {
@@ -113,7 +126,9 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
+    pub fn new(
+        thread_count: usize,
+    ) -> Result<Self, RayonBatchExecutorBuildError> {
         Self::builder().thread_count(thread_count).build()
     }
 
@@ -187,7 +202,7 @@ impl RayonBatchExecutor {
     /// A shared reference to the configured progress reporter.
     #[inline]
     pub fn reporter(&self) -> &Arc<dyn Reporter> {
-        &self.coordinator.reporter()
+        self.coordinator.reporter()
     }
 }
 
@@ -232,7 +247,8 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// Panics from tasks are captured in the result. Panics from synchronous
     /// progress callbacks are propagated to the caller; panics from the
-    /// scoped running reporter are returned as [`qubit_batch::ProgressFailure`].
+    /// scoped running reporter are returned as
+    /// [`qubit_batch::ProgressFailure`].
     fn execute_with_count<T, E, I>(
         &self,
         tasks: I,
@@ -253,12 +269,11 @@ impl BatchExecutor for RayonBatchExecutor {
         }
 
         let worker_count = self.thread_count.min(count);
-        self.coordinator.execute(
-            tasks,
-            count,
-            move |tasks, count, context| {
+        self.coordinator
+            .execute(tasks, count, move |tasks, count, context| {
                 self.pool.in_place_scope_fifo(|scope| {
-                    let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
+                    let (work_sender, work_receiver) =
+                        mpsc::sync_channel(worker_count);
                     let work_receiver = Arc::new(Mutex::new(work_receiver));
                     for _ in 0..worker_count {
                         let worker_receiver = Arc::clone(&work_receiver);
@@ -291,8 +306,7 @@ impl BatchExecutor for RayonBatchExecutor {
                     drop(work_sender);
                     observed_count
                 })
-            },
-        )
+            })
     }
 }
 

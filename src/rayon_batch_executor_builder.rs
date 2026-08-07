@@ -5,11 +5,20 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::Duration,
+};
 
-use qubit_progress::{NoopReporter, Reporter};
+use qubit_progress::{
+    NoopReporter,
+    Reporter,
+};
 
-use crate::{RayonBatchExecutor, RayonBatchExecutorBuildError};
+use crate::{
+    RayonBatchExecutor,
+    RayonBatchExecutorBuildError,
+};
 
 /// Default worker-thread name prefix for [`RayonBatchExecutor`].
 const DEFAULT_THREAD_NAME_PREFIX: &str = "qubit-rayon-batch";
@@ -133,7 +142,10 @@ impl RayonBatchExecutorBuilder {
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn thread_name_prefix(mut self, thread_name_prefix: impl Into<String>) -> Self {
+    pub fn thread_name_prefix(
+        mut self,
+        thread_name_prefix: impl Into<String>,
+    ) -> Self {
         self.thread_name_prefix = thread_name_prefix.into();
         self
     }
@@ -164,7 +176,9 @@ impl RayonBatchExecutorBuilder {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
+    pub fn build(
+        self,
+    ) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
         if self.thread_count == 0 {
             return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
         }
@@ -193,7 +207,8 @@ impl Default for RayonBatchExecutorBuilder {
     fn default() -> Self {
         Self {
             thread_count: RayonBatchExecutor::default_thread_count(),
-            sequential_threshold: RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
+            sequential_threshold:
+                RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
             report_interval: RayonBatchExecutor::DEFAULT_REPORT_INTERVAL,
             reporter: Arc::new(NoopReporter),
             thread_name_prefix: DEFAULT_THREAD_NAME_PREFIX.to_owned(),
