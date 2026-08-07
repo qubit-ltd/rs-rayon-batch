@@ -281,15 +281,15 @@ fn test_rayon_batch_executor_call_reports_count_mismatches() {
     let shortfall = executor
         .call_with_count(vec![TestCallable::returning(10)], 2)
         .expect_err("call shortfall should be reported");
-    match shortfall {
+    match shortfall.source() {
         BatchExecutionError::CountShortfall {
             expected,
             actual,
             outcome,
             ..
         } => {
-            assert_eq!(expected, 2);
-            assert_eq!(actual, 1);
+            assert_eq!(*expected, 2);
+            assert_eq!(*actual, 1);
             assert_eq!(outcome.completed_count(), 1);
         }
         other => panic!("unexpected error: {other:?}"),
@@ -305,15 +305,15 @@ fn test_rayon_batch_executor_call_reports_count_mismatches() {
             2,
         )
         .expect_err("call overflow should be reported");
-    match exceeded {
+    match exceeded.source() {
         BatchExecutionError::CountExceeded {
             expected,
             observed_at_least,
             outcome,
             ..
         } => {
-            assert_eq!(expected, 2);
-            assert_eq!(observed_at_least, 3);
+            assert_eq!(*expected, 2);
+            assert_eq!(*observed_at_least, 3);
             assert_eq!(outcome.completed_count(), 2);
         }
         other => panic!("unexpected error: {other:?}"),

@@ -284,12 +284,11 @@ impl BatchExecutor for RayonBatchExecutor {
                     }
                     drop(work_receiver);
 
-                    let mut observed_count = 0usize;
                     for task in tasks {
                         if context.reporting_failed() {
                             break;
                         }
-                        observed_count = context.record_task_observed();
+                        let observed_count = context.record_task_observed();
                         if observed_count > count {
                             break;
                         }
@@ -304,7 +303,6 @@ impl BatchExecutor for RayonBatchExecutor {
                         }
                     }
                     drop(work_sender);
-                    observed_count
                 })
             })
     }
