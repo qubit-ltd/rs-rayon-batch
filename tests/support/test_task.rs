@@ -9,10 +9,7 @@ use std::{
     panic::panic_any,
     sync::{
         Arc,
-        atomic::{
-            AtomicUsize,
-            Ordering,
-        },
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
@@ -127,10 +124,7 @@ impl TestTask {
     /// # Returns
     ///
     /// A delayed failing test task.
-    pub const fn fail_after_sleep(
-        error: &'static str,
-        duration: Duration,
-    ) -> Self {
+    pub const fn fail_after_sleep(error: &'static str, duration: Duration) -> Self {
         Self {
             action: TestTaskAction::FailAfterSleep { error, duration },
         }
@@ -230,9 +224,7 @@ impl Runnable<&'static str> for TestTask {
                 thread::sleep(*duration);
                 Err(*error)
             }
-            TestTaskAction::PanicString { message } => {
-                panic_any((*message).to_owned())
-            }
+            TestTaskAction::PanicString { message } => panic_any((*message).to_owned()),
             TestTaskAction::PanicUsize { payload } => panic_any(*payload),
             TestTaskAction::SleepSuccess { duration } => {
                 thread::sleep(*duration);
@@ -262,12 +254,7 @@ impl Runnable<&'static str> for TestTask {
 fn update_max(max_active: &AtomicUsize, current: usize) {
     let mut observed = max_active.load(Ordering::Acquire);
     while current > observed {
-        match max_active.compare_exchange(
-            observed,
-            current,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
+        match max_active.compare_exchange(observed, current, Ordering::AcqRel, Ordering::Acquire) {
             Ok(_) => return,
             Err(value) => observed = value,
         }

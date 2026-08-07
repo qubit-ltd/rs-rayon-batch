@@ -7,38 +7,24 @@
 // =============================================================================
 use std::{
     sync::{
-        Arc,
-        Mutex,
-        PoisonError,
-        mpsc::{
-            self,
-            Receiver,
-        },
+        Arc, Mutex, PoisonError,
+        mpsc::{self, Receiver},
     },
     thread,
     time::Duration,
 };
 
-use qubit_batch::{
-    BatchExecutionError,
-    BatchExecutor,
-    BatchOutcome,
-    SequentialBatchExecutor,
-    TaskFailurePolicy,
-};
 use qubit_batch::execute::spi::{
-    ParallelBatchExecutionContext,
-    ParallelBatchExecutionCoordinator,
-    ParallelBatchTask,
+    ParallelBatchExecutionContext, ParallelBatchExecutionCoordinator, ParallelBatchTask,
+};
+use qubit_batch::{
+    BatchExecutionError, BatchExecutor, BatchOutcome, SequentialBatchExecutor, TaskFailurePolicy,
 };
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
 
-use crate::{
-    RayonBatchExecutorBuildError,
-    RayonBatchExecutorBuilder,
-};
+use crate::{RayonBatchExecutorBuildError, RayonBatchExecutorBuilder};
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -121,9 +107,7 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(
-        thread_count: usize,
-    ) -> Result<Self, RayonBatchExecutorBuildError> {
+    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
         Self::builder().thread_count(thread_count).build()
     }
 
@@ -234,9 +218,10 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// # Errors
     ///
-    /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails, or
-    /// a count-mismatch variant when `tasks` yields fewer or more tasks than
-    /// `count`.
+    /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails, a
+    /// count-mismatch variant when `tasks` yields fewer or more tasks than
+    /// `count`, or [`BatchExecutionError::IncompleteSchedule`] when an accepted
+    /// task is not completed by the Rayon scheduler.
     ///
     /// # Panics
     ///
@@ -267,8 +252,7 @@ impl BatchExecutor for RayonBatchExecutor {
         self.coordinator
             .execute(tasks, count, move |tasks, context| {
                 self.pool.in_place_scope_fifo(|scope| {
-                    let (work_sender, work_receiver) =
-                        mpsc::sync_channel(worker_count);
+                    let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                     let work_receiver = Arc::new(Mutex::new(work_receiver));
                     for _ in 0..worker_count {
                         let worker_receiver = Arc::clone(&work_receiver);
