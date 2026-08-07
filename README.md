@@ -64,3 +64,45 @@ let result = executor
 assert_eq!(result.completed_count(), 8);
 assert_eq!(result.failure_count(), 0);
 ```
+
+## Testing
+
+Run the local checks from the crate root:
+
+```bash
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+To match the repository CI environment, run:
+
+```bash
+./align-ci.sh
+./ci-check.sh
+./coverage.sh json
+```
+
+## Contributing
+
+Issues and pull requests are welcome. Keep changes focused, add regression
+tests for behavior changes, and update both README files when public APIs or
+user-visible behavior changes.
+
+By contributing, you agree that your contribution is licensed under the same
+[Apache License, Version 2.0](LICENSE) as this project.
+
+## License
+
+Copyright (c) 2026. Haixing Hu.
+
+This software is licensed under the [Apache License, Version 2.0](LICENSE).
+
+## Author
+
+**Haixing Hu** — Qubit Co. Ltd.
+
+| | |
+| --- | --- |
+| **Repository** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
+| **API documentation** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
+| **Crate** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
