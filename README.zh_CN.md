@@ -61,3 +61,44 @@ let result = executor
 assert_eq!(result.completed_count(), 8);
 assert_eq!(result.failure_count(), 0);
 ```
+
+## 测试
+
+在 crate 根目录执行本地检查：
+
+```bash
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+若要与仓库 CI 环境保持一致，请运行：
+
+```bash
+./align-ci.sh
+./ci-check.sh
+./coverage.sh json
+```
+
+## 贡献
+
+欢迎通过 Issue 与 Pull Request 参与本仓库。请保持变更聚焦；修改行为时补充回归
+测试；公开 API 或用户可见行为变化时同步更新中英文 README。
+
+向本仓库贡献内容即表示您同意以与本项目相同的
+[Apache License, Version 2.0](LICENSE) 授权您的贡献。
+
+## 许可证
+
+Copyright (c) 2026. Haixing Hu.
+
+本软件依据 [Apache License, Version 2.0](LICENSE) 授权。
+
+## 作者
+
+**Haixing Hu** — Qubit Co. Ltd.
+
+| | |
+| --- | --- |
+| **源码仓库** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
+| **API 文档** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
+| **Crate 发布** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
