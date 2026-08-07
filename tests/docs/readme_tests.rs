@@ -10,17 +10,15 @@
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const README_EN: &str = include_str!("../../README.md");
 const README_ZH: &str = include_str!("../../README.zh_CN.md");
-const RAYON_BATCH_EXECUTOR: &str =
-    include_str!("../../src/rayon_batch_executor.rs");
+const RAYON_BATCH_EXECUTOR: &str = include_str!("../../src/rayon_batch_executor.rs");
 
 #[test]
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
 fn test_readme_dependency_version_matches_cargo_toml() {
-    let package_version = extract_package_version(CARGO_TOML)
-        .expect("Failed to extract version from Cargo.toml");
-    let cargo_qubit_batch =
-        extract_cargo_dependency_version(CARGO_TOML, "qubit-batch")
-            .expect("Failed to extract qubit-batch from Cargo.toml");
+    let package_version =
+        extract_package_version(CARGO_TOML).expect("Failed to extract version from Cargo.toml");
+    let cargo_qubit_batch = extract_cargo_dependency_version(CARGO_TOML, "qubit-batch")
+        .expect("Failed to extract qubit-batch from Cargo.toml");
 
     let readme_en_rayon = extract_readme_qubit_rayon_batch_version(README_EN)
         .expect("Failed to extract qubit-rayon-batch from README.md");
@@ -54,9 +52,7 @@ fn test_readme_mentions_current_executor_type() {
 #[test]
 /// Ensures Rayon progress reporting uses the shared parallel execution driver.
 fn test_rayon_progress_reporting_uses_the_parallel_execution_driver() {
-    assert!(
-        RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecutionCoordinator::new")
-    );
+    assert!(RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecutionCoordinator::new"));
     assert!(RAYON_BATCH_EXECUTOR.contains("coordinator"));
     assert!(RAYON_BATCH_EXECUTOR.contains(".execute"));
     assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop"));
@@ -75,8 +71,7 @@ fn extract_package_version(content: &str) -> Option<&str> {
 /// Extracts the `qubit-rayon-batch` dependency version from a README file.
 fn extract_readme_qubit_rayon_batch_version(content: &str) -> Option<&str> {
     for line in content.lines() {
-        if let Some(value) = line.trim().strip_prefix("qubit-rayon-batch = \"")
-        {
+        if let Some(value) = line.trim().strip_prefix("qubit-rayon-batch = \"") {
             return value.strip_suffix('"');
         }
     }
@@ -94,10 +89,7 @@ fn extract_readme_qubit_batch_version(content: &str) -> Option<&str> {
 }
 
 /// Reads a dependency version from either a string or inline-table entry.
-fn extract_cargo_dependency_version<'a>(
-    content: &'a str,
-    dep_name: &str,
-) -> Option<&'a str> {
+fn extract_cargo_dependency_version<'a>(content: &'a str, dep_name: &str) -> Option<&'a str> {
     let prefix = format!("{dep_name} = ");
     for line in content.lines() {
         let line = line.trim();
@@ -108,8 +100,7 @@ fn extract_cargo_dependency_version<'a>(
             {
                 return Some(version);
             }
-            for field in value.strip_prefix('{')?.strip_suffix('}')?.split(',')
-            {
+            for field in value.strip_prefix('{')?.strip_suffix('}')?.split(',') {
                 if let Some(version) = field
                     .trim()
                     .strip_prefix("version = \"")
