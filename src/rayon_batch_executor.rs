@@ -23,11 +23,13 @@ use qubit_batch::{
     BatchExecutionError,
     BatchExecutor,
     BatchOutcome,
+    SequentialBatchExecutor,
+    TaskFailurePolicy,
+};
+use qubit_batch::execute::spi::{
     ParallelBatchExecutionContext,
     ParallelBatchExecutionCoordinator,
     ParallelBatchTask,
-    SequentialBatchExecutor,
-    TaskFailurePolicy,
 };
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
