@@ -5,11 +5,14 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! # Rayon Batch Module Tests
-//!
-//! Tests for Rayon-backed batch execution and documentation consistency.
-#![allow(clippy::result_large_err)]
+//! Tests for Rayon scheduler errors.
 
-mod docs;
-mod executor;
-mod support;
+use qubit_rayon_batch::RayonBatchScheduleError;
+
+#[test]
+fn scheduler_error_has_stable_display() {
+    assert_eq!(
+        RayonBatchScheduleError::WorkChannelDisconnected.to_string(),
+        "Rayon batch work channel disconnected"
+    );
+}

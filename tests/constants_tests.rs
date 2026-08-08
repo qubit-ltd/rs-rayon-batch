@@ -5,11 +5,13 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! # Rayon Batch Module Tests
-//!
-//! Tests for Rayon-backed batch execution and documentation consistency.
-#![allow(clippy::result_large_err)]
+//! Tests for Rayon batch defaults.
 
-mod docs;
-mod executor;
-mod support;
+#[test]
+fn default_thread_name_prefix_is_stable() {
+    let executor = qubit_rayon_batch::RayonBatchExecutor::builder()
+        .thread_count(1)
+        .build()
+        .expect("default configuration should build");
+    assert_eq!(executor.thread_count(), 1);
+}

@@ -7,24 +7,39 @@
 // =============================================================================
 use std::{
     sync::{
-        Arc, Mutex, PoisonError,
-        mpsc::{self, Receiver},
+        Arc,
+        Mutex,
+        PoisonError,
+        mpsc::{
+            self,
+            Receiver,
+        },
     },
     thread,
     time::Duration,
 };
 
 use qubit_batch::execute::spi::{
-    ParallelBatchExecutionContext, ParallelBatchExecutionCoordinator, ParallelBatchTask,
+    ParallelBatchExecutionContext,
+    ParallelBatchExecutionCoordinator,
+    ParallelBatchTask,
 };
 use qubit_batch::{
-    BatchExecutionError, BatchExecutor, BatchOutcome, SequentialBatchExecutor, TaskFailurePolicy,
+    BatchExecutionError,
+    BatchExecutor,
+    BatchOutcome,
+    SequentialBatchExecutor,
+    TaskFailurePolicy,
 };
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
 
-use crate::{RayonBatchExecutorBuildError, RayonBatchExecutorBuilder};
+use crate::{
+    RayonBatchExecutorBuildError,
+    RayonBatchExecutorBuilder,
+    RayonBatchScheduleError,
+};
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -61,14 +76,18 @@ pub struct RayonBatchExecutor {
     sequential_threshold: usize,
     /// Shared coordinator used for parallel execution flow.
     coordinator: ParallelBatchExecutionCoordinator,
+    /// Policy applied after task failures in Rayon workers.
+    task_failure_policy: TaskFailurePolicy,
 }
 
 impl RayonBatchExecutor {
     /// Default interval between progress callbacks.
-    pub const DEFAULT_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+    pub const DEFAULT_REPORT_INTERVAL: Duration =
+        crate::constants::DEFAULT_REPORT_INTERVAL;
 
     /// Default sequential fallback threshold.
-    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize = 100;
+    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize =
+        crate::constants::DEFAULT_SEQUENTIAL_THRESHOLD;
 
     /// Returns the default Rayon worker-thread count used by the builder.
     ///
@@ -107,7 +126,9 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
+    pub fn new(
+        thread_count: usize,
+    ) -> Result<Self, RayonBatchExecutorBuildError> {
         Self::builder().thread_count(thread_count).build()
     }
 
@@ -141,6 +162,7 @@ impl RayonBatchExecutor {
                 builder.reporter,
                 builder.report_interval,
             ),
+            task_failure_policy: builder.task_failure_policy,
         }
     }
 
@@ -162,6 +184,12 @@ impl RayonBatchExecutor {
     #[inline]
     pub const fn sequential_threshold(&self) -> usize {
         self.sequential_threshold
+    }
+
+    /// Returns the configured task-failure policy.
+    #[inline]
+    pub const fn task_failure_policy(&self) -> TaskFailurePolicy {
+        self.task_failure_policy
     }
 
     /// Returns the configured progress-report interval.
@@ -204,6 +232,7 @@ impl Default for RayonBatchExecutor {
 }
 
 impl BatchExecutor for RayonBatchExecutor {
+    type SchedulerError = RayonBatchScheduleError;
     /// Executes the batch on Rayon workers when the batch is large enough.
     ///
     /// # Parameters
@@ -233,7 +262,7 @@ impl BatchExecutor for RayonBatchExecutor {
         &self,
         tasks: I,
         count: usize,
-    ) -> Result<BatchOutcome<E>, BatchExecutionError<E>>
+    ) -> Result<BatchOutcome<E>, BatchExecutionError<E, Self::SchedulerError>>
     where
         I: IntoIterator<Item = T>,
         T: Runnable<E> + Send,
@@ -243,14 +272,19 @@ impl BatchExecutor for RayonBatchExecutor {
             let sequential = SequentialBatchExecutor::builder()
                 .report_interval(self.coordinator.report_interval())
                 .reporter_arc(Arc::clone(self.coordinator.reporter()))
-                .task_failure_policy(TaskFailurePolicy::Continue)
+                .task_failure_policy(self.task_failure_policy)
                 .build();
-            return sequential.execute_with_count(tasks, count);
+            return sequential.execute_with_count(tasks, count).map_err(
+                |error| error.map_scheduler_error(|never| match never {}),
+            );
         }
 
         let worker_count = self.thread_count.min(count);
-        self.coordinator
-            .execute(tasks, count, move |tasks, context| {
+        self.coordinator.execute(
+            tasks,
+            count,
+            self.task_failure_policy,
+            move |tasks, context| {
                 self.pool.in_place_scope_fifo(|scope| {
                     let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                     let work_receiver = Arc::new(Mutex::new(work_receiver));
@@ -268,12 +302,14 @@ impl BatchExecutor for RayonBatchExecutor {
                             break;
                         };
                         if work_sender.send(task).is_err() {
-                            break;
+                            return Err(RayonBatchScheduleError::WorkChannelDisconnected);
                         }
                     }
                     drop(work_sender);
+                    Ok(())
                 })
-            })
+            },
+        )
     }
 }
 
