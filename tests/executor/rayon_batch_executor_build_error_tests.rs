@@ -7,7 +7,10 @@
 // =============================================================================
 //! Tests for [`RayonBatchExecutorBuildError`](qubit_rayon_batch::RayonBatchExecutorBuildError).
 
-use qubit_rayon_batch::{RayonBatchExecutor, RayonBatchExecutorBuildError};
+use qubit_rayon_batch::{
+    RayonBatchExecutor,
+    RayonBatchExecutorBuildError,
+};
 
 #[test]
 fn test_rayon_batch_executor_build_error_formats_zero_thread_count() {

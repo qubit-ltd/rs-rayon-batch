@@ -5,15 +5,23 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::Duration,
+};
 
-use qubit_progress::{NoopReporter, Reporter};
+use qubit_progress::{
+    NoopReporter,
+    Reporter,
+};
 
-use crate::{RayonBatchExecutor, RayonBatchExecutorBuildError};
+use crate::{
+    RayonBatchExecutor,
+    RayonBatchExecutorBuildError,
+};
+use qubit_batch::TaskFailurePolicy;
 
 /// Default worker-thread name prefix for [`RayonBatchExecutor`].
-const DEFAULT_THREAD_NAME_PREFIX: &str = "qubit-rayon-batch";
-
 /// Builder for [`RayonBatchExecutor`].
 pub struct RayonBatchExecutorBuilder {
     /// Number of Rayon worker threads to create.
@@ -24,6 +32,8 @@ pub struct RayonBatchExecutorBuilder {
     pub(crate) report_interval: Duration,
     /// Reporter receiving batch lifecycle callbacks.
     pub(crate) reporter: Arc<dyn Reporter>,
+    /// Policy applied after task failures in Rayon workers.
+    pub(crate) task_failure_policy: TaskFailurePolicy,
     /// Prefix used when naming Rayon worker threads.
     pub(crate) thread_name_prefix: String,
     /// Optional worker stack size in bytes.
@@ -123,6 +133,17 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
+    /// Sets the policy that controls Rayon source acceptance after task
+    /// errors or captured panics.
+    #[inline]
+    pub const fn task_failure_policy(
+        mut self,
+        task_failure_policy: TaskFailurePolicy,
+    ) -> Self {
+        self.task_failure_policy = task_failure_policy;
+        self
+    }
+
     /// Sets the Rayon worker-thread name prefix.
     ///
     /// # Parameters
@@ -133,7 +154,10 @@ impl RayonBatchExecutorBuilder {
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn thread_name_prefix(mut self, thread_name_prefix: impl Into<String>) -> Self {
+    pub fn thread_name_prefix(
+        mut self,
+        thread_name_prefix: impl Into<String>,
+    ) -> Self {
         self.thread_name_prefix = thread_name_prefix.into();
         self
     }
@@ -164,7 +188,9 @@ impl RayonBatchExecutorBuilder {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
+    pub fn build(
+        self,
+    ) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
         if self.thread_count == 0 {
             return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
         }
@@ -193,10 +219,13 @@ impl Default for RayonBatchExecutorBuilder {
     fn default() -> Self {
         Self {
             thread_count: RayonBatchExecutor::default_thread_count(),
-            sequential_threshold: RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
+            sequential_threshold:
+                RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
             report_interval: RayonBatchExecutor::DEFAULT_REPORT_INTERVAL,
             reporter: Arc::new(NoopReporter),
-            thread_name_prefix: DEFAULT_THREAD_NAME_PREFIX.to_owned(),
+            task_failure_policy: TaskFailurePolicy::Continue,
+            thread_name_prefix: crate::constants::DEFAULT_THREAD_NAME_PREFIX
+                .to_owned(),
             stack_size: None,
         }
     }
