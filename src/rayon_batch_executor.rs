@@ -8,8 +8,8 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
+use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
-use std::sync::mpsc::{self};
 use std::thread;
 use std::time::Duration;
 
