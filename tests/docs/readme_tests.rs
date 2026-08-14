@@ -13,8 +13,8 @@ const README_ZH: &str = include_str!("../../README.zh_CN.md");
 const RAYON_BATCH_EXECUTOR: &str =
     include_str!("../../src/rayon_batch_executor.rs");
 
-#[test]
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
+#[test]
 fn test_readme_dependency_version_matches_cargo_toml() {
     let package_version = extract_package_version(CARGO_TOML)
         .expect("Failed to extract version from Cargo.toml");
@@ -44,15 +44,15 @@ fn test_readme_dependency_version_matches_cargo_toml() {
     assert_eq!(readme_zh_batch, cargo_qubit_batch);
 }
 
-#[test]
 /// Ensures both README files document the current executor type.
+#[test]
 fn test_readme_mentions_current_executor_type() {
     assert!(README_EN.contains("RayonBatchExecutor"));
     assert!(README_ZH.contains("RayonBatchExecutor"));
 }
 
-#[test]
 /// Ensures Rayon progress reporting uses the shared parallel execution driver.
+#[test]
 fn test_rayon_progress_reporting_uses_the_parallel_execution_driver() {
     assert!(
         RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecutionCoordinator::new")
