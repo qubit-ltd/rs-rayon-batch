@@ -5,41 +5,29 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    sync::{
-        Arc,
-        Mutex,
-        PoisonError,
-        mpsc::{
-            self,
-            Receiver,
-        },
-    },
-    thread,
-    time::Duration,
-};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::PoisonError;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self};
+use std::thread;
+use std::time::Duration;
 
-use qubit_batch::execute::spi::{
-    ParallelBatchExecutionContext,
-    ParallelBatchExecutionCoordinator,
-    ParallelBatchTask,
-};
-use qubit_batch::{
-    BatchExecutionError,
-    BatchExecutor,
-    BatchOutcome,
-    SequentialBatchExecutor,
-    TaskFailurePolicy,
-};
+use qubit_batch::BatchExecutionError;
+use qubit_batch::BatchExecutor;
+use qubit_batch::BatchOutcome;
+use qubit_batch::SequentialBatchExecutor;
+use qubit_batch::TaskFailurePolicy;
+use qubit_batch::execute::spi::ParallelBatchExecutionContext;
+use qubit_batch::execute::spi::ParallelBatchExecutionCoordinator;
+use qubit_batch::execute::spi::ParallelBatchTask;
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
 
-use crate::{
-    RayonBatchExecutorBuildError,
-    RayonBatchExecutorBuilder,
-    RayonBatchScheduleError,
-};
+use crate::RayonBatchExecutorBuildError;
+use crate::RayonBatchExecutorBuilder;
+use crate::RayonBatchScheduleError;
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///

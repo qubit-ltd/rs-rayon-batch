@@ -5,21 +5,15 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    sync::Arc,
-    time::Duration,
-};
+use std::sync::Arc;
+use std::time::Duration;
 
-use qubit_progress::{
-    NoopReporter,
-    Reporter,
-};
-
-use crate::{
-    RayonBatchExecutor,
-    RayonBatchExecutorBuildError,
-};
 use qubit_batch::TaskFailurePolicy;
+use qubit_progress::NoopReporter;
+use qubit_progress::Reporter;
+
+use crate::RayonBatchExecutor;
+use crate::RayonBatchExecutorBuildError;
 
 /// Default worker-thread name prefix for [`RayonBatchExecutor`].
 /// Builder for [`RayonBatchExecutor`].

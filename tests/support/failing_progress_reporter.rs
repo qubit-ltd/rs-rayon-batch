@@ -5,19 +5,13 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    io,
-    sync::atomic::{
-        AtomicUsize,
-        Ordering,
-    },
-};
+use std::io;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
-use qubit_progress::{
-    Event,
-    Reporter,
-    ReporterError,
-};
+use qubit_progress::Event;
+use qubit_progress::Reporter;
+use qubit_progress::ReporterError;
 
 /// Progress reporter that fails after a configured number of successful calls.
 pub struct FailingProgressReporter {

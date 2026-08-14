@@ -7,47 +7,31 @@
 // =============================================================================
 //! Tests for [`RayonBatchExecutor`](qubit_rayon_batch::RayonBatchExecutor).
 
-use std::{
-    panic::{
-        AssertUnwindSafe,
-        catch_unwind,
-        panic_any,
-    },
-    sync::{
-        Arc,
-        atomic::{
-            AtomicUsize,
-            Ordering,
-        },
-    },
-    time::Duration,
-};
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::panic::panic_any;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-use qubit_batch::{
-    BatchExecutionError,
-    BatchExecutor,
-    ProgressFailure,
-};
-use qubit_progress::{
-    AutoReporterError,
-    Event,
-    MetricSnapshot,
-    Phase,
-};
-use qubit_rayon_batch::{
-    RayonBatchExecutor,
-    RayonBatchExecutorBuildError,
-};
+use qubit_batch::BatchExecutionError;
+use qubit_batch::BatchExecutor;
+use qubit_batch::ProgressFailure;
+use qubit_progress::AutoReporterError;
+use qubit_progress::Event;
+use qubit_progress::MetricSnapshot;
+use qubit_progress::Phase;
+use qubit_rayon_batch::RayonBatchExecutor;
+use qubit_rayon_batch::RayonBatchExecutorBuildError;
 
-use crate::support::{
-    FailingProgressReporter,
-    PanickingProgressReporter,
-    ProgressPanicPhase,
-    RecordingProgressReporter,
-    TestCallable,
-    TestTask,
-    panic_payload_message,
-};
+use crate::support::FailingProgressReporter;
+use crate::support::PanickingProgressReporter;
+use crate::support::ProgressPanicPhase;
+use crate::support::RecordingProgressReporter;
+use crate::support::TestCallable;
+use crate::support::TestTask;
+use crate::support::panic_payload_message;
 
 #[test]
 fn test_rayon_batch_executor_returns_progress_report_error() {
