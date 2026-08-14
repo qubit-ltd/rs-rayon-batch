@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use qubit_batch::BatchExecutor;
+use qubit_batch::TaskFailurePolicy;
 use qubit_progress::Phase;
 use qubit_rayon_batch::RayonBatchExecutor;
 
@@ -23,6 +24,7 @@ fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
         .thread_count(2)
         .sequential_threshold(7)
         .report_interval(Duration::from_millis(15))
+        .task_failure_policy(TaskFailurePolicy::StopOnFirstFailure)
         .thread_name_prefix(String::from("builder-test-worker"))
         .stack_size(2 * 1024 * 1024)
         .build()
@@ -31,6 +33,10 @@ fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
     assert_eq!(executor.thread_count(), 2);
     assert_eq!(executor.sequential_threshold(), 7);
     assert_eq!(executor.report_interval(), Duration::from_millis(15));
+    assert_eq!(
+        executor.task_failure_policy(),
+        TaskFailurePolicy::StopOnFirstFailure
+    );
 }
 
 #[test]
