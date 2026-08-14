@@ -5,16 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    panic::panic_any,
-    sync::Mutex,
-};
+use std::panic::panic_any;
+use std::sync::Mutex;
 
-use qubit_progress::{
-    Event,
-    Phase,
-    Reporter,
-};
+use qubit_progress::Event;
+use qubit_progress::Phase;
+use qubit_progress::Reporter;
 
 /// Progress callback that should panic during a test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

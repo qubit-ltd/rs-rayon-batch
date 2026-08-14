@@ -9,17 +9,13 @@
 
 use std::hint::black_box;
 
-use criterion::{
-    BenchmarkId,
-    Criterion,
-    criterion_group,
-    criterion_main,
-};
-use qubit_batch::{
-    BatchExecutor,
-    ParallelBatchExecutor,
-    SequentialBatchExecutor,
-};
+use criterion::BenchmarkId;
+use criterion::Criterion;
+use criterion::criterion_group;
+use criterion::criterion_main;
+use qubit_batch::BatchExecutor;
+use qubit_batch::ParallelBatchExecutor;
+use qubit_batch::SequentialBatchExecutor;
 use qubit_function::Runnable;
 use qubit_rayon_batch::RayonBatchExecutor;
 

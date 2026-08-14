@@ -7,19 +7,15 @@
 // =============================================================================
 //! Tests for [`RayonBatchExecutorBuilder`](qubit_rayon_batch::RayonBatchExecutorBuilder).
 
-use std::{
-    sync::Arc,
-    time::Duration,
-};
+use std::sync::Arc;
+use std::time::Duration;
 
 use qubit_batch::BatchExecutor;
 use qubit_progress::Phase;
 use qubit_rayon_batch::RayonBatchExecutor;
 
-use crate::support::{
-    RecordingProgressReporter,
-    TestTask,
-};
+use crate::support::RecordingProgressReporter;
+use crate::support::TestTask;
 
 #[test]
 fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {

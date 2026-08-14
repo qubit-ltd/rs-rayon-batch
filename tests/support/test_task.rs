@@ -5,18 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-use std::{
-    panic::panic_any,
-    sync::{
-        Arc,
-        atomic::{
-            AtomicUsize,
-            Ordering,
-        },
-    },
-    thread,
-    time::Duration,
-};
+use std::panic::panic_any;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::Duration;
 
 use qubit_function::Runnable;
 
