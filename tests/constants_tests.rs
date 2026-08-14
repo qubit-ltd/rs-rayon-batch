@@ -7,9 +7,11 @@
 // =============================================================================
 //! Tests for Rayon batch defaults.
 
+use qubit_rayon_batch::RayonBatchExecutor;
+
 #[test]
 fn default_thread_name_prefix_is_stable() {
-    let executor = qubit_rayon_batch::RayonBatchExecutor::builder()
+    let executor = RayonBatchExecutor::builder()
         .thread_count(1)
         .build()
         .expect("default configuration should build");
