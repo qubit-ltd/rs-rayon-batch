@@ -28,6 +28,7 @@ use rayon::ThreadPool as RayonThreadPool;
 use crate::RayonBatchExecutorBuildError;
 use crate::RayonBatchExecutorBuilder;
 use crate::RayonBatchScheduleError;
+use crate::active_batch_guard::ActiveBatchGuard;
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -244,7 +245,9 @@ impl BatchExecutor for RayonBatchExecutor {
         T: Runnable<E> + Send,
         E: Send,
     {
-        if self.pool.current_thread_index().is_some() || count <= self.sequential_threshold || self.thread_count <= 1 {
+        let active_guard = ActiveBatchGuard::enter(&self.pool);
+        let reentrant = active_guard.is_none() || self.pool.current_thread_index().is_some();
+        if reentrant || count <= self.sequential_threshold || self.thread_count <= 1 {
             let sequential = SequentialBatchExecutor::builder()
                 .report_interval(self.coordinator.report_interval())
                 .reporter_arc(Arc::clone(self.coordinator.reporter()))
@@ -270,10 +273,8 @@ impl BatchExecutor for RayonBatchExecutor {
                     }
                     drop(work_receiver);
 
-                    for task in tasks {
-                        let Some(task) = context.accept_task(task) else {
-                            break;
-                        };
+                    let mut tasks = tasks.into_iter();
+                    while let Some(task) = context.next_task(&mut tasks) {
                         if work_sender.send(task).is_err() {
                             return Err(RayonBatchScheduleError::WorkChannelDisconnected);
                         }

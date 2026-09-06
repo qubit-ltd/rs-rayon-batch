@@ -7,6 +7,8 @@
 // =============================================================================
 //! Regression tests for nested Rayon batch execution.
 
+#![allow(clippy::result_large_err)]
+
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Barrier;
@@ -231,4 +233,116 @@ fn nested_different_pool_remains_parallel() {
     }
 
     run_with_watchdog("nested_different_pool_remains_parallel", DIFFERENT_POOL_CHILD);
+}
+
+#[test]
+fn nested_from_source_producer_completes() {
+    const CHILD: &str = "QUBIT_BATCH_NESTED_SOURCE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_with_watchdog("nested_from_source_producer_completes", CHILD);
+        return;
+    }
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("the source producer test executor should build");
+    let nested = executor.clone();
+    let barrier = Barrier::new(3);
+    let producer = thread::current().id();
+    let tasks = (0..3).map(|index| {
+        if index == 2 {
+            barrier.wait();
+            let inner = nested
+                .for_each(0..2, |_| {
+                    assert_eq!(thread::current().id(), producer);
+                    Ok::<(), ()>(())
+                })
+                .expect("source producer nested execution should return");
+            assert!(inner.is_success());
+        }
+        let barrier = &barrier;
+        move || {
+            if index < 2 {
+                barrier.wait();
+            }
+            Ok::<(), ()>(())
+        }
+    });
+    assert!(
+        executor
+            .execute(tasks)
+            .expect("outer execution should return")
+            .is_success()
+    );
+}
+
+#[test]
+fn source_panic_does_not_leak_active_guard() {
+    use std::panic::AssertUnwindSafe;
+    use std::panic::catch_unwind;
+
+    struct PanicSource;
+
+    impl Iterator for PanicSource {
+        type Item = fn() -> Result<(), ()>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            panic!("source panic");
+        }
+    }
+
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("the guard cleanup executor should build");
+    let result = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(PanicSource, 2)));
+    assert!(result.is_err());
+    let caller = thread::current().id();
+    assert!(
+        executor
+            .for_each(0..2, |_| {
+                assert_ne!(thread::current().id(), caller);
+                Ok::<(), ()>(())
+            })
+            .expect("executor should remain usable after source panic")
+            .is_success()
+    );
+}
+
+#[test]
+fn source_producer_can_use_a_different_pool_in_parallel() {
+    let outer = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("outer executor should build");
+    let inner = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("inner executor should build");
+    let producer = thread::current().id();
+    let tasks = (0..2).map(|_| {
+        let inner = inner.clone();
+        move || {
+            assert!(
+                inner
+                    .for_each(0..2, |_| {
+                        assert_ne!(thread::current().id(), producer);
+                        Ok::<(), ()>(())
+                    })
+                    .expect("different pool nested execution should return")
+                    .is_success()
+            );
+            Ok::<(), ()>(())
+        }
+    });
+    assert!(
+        outer
+            .execute(tasks)
+            .expect("outer execution should return")
+            .is_success()
+    );
 }
