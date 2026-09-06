@@ -56,9 +56,7 @@ impl Runnable<()> for CpuTask {
     fn run(&mut self) -> Result<(), ()> {
         let mut value = self.seed;
         for _ in 0..256 {
-            value = value
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1);
+            value = value.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         }
         black_box(value);
         Ok(())
@@ -86,12 +84,7 @@ fn benchmark_no_op_execution(criterion: &mut Criterion) {
 
     for task_count in BATCH_SIZES {
         benchmark_no_op_case(&mut group, "sequential", &sequential, task_count);
-        benchmark_no_op_case(
-            &mut group,
-            "scoped_parallel",
-            &parallel,
-            task_count,
-        );
+        benchmark_no_op_case(&mut group, "scoped_parallel", &parallel, task_count);
         benchmark_no_op_case(&mut group, "rayon", &rayon, task_count);
     }
     group.finish();
@@ -119,12 +112,7 @@ fn benchmark_cpu_execution(criterion: &mut Criterion) {
 
     for task_count in BATCH_SIZES {
         benchmark_cpu_case(&mut group, "sequential", &sequential, task_count);
-        benchmark_cpu_case(
-            &mut group,
-            "scoped_parallel",
-            &parallel,
-            task_count,
-        );
+        benchmark_cpu_case(&mut group, "scoped_parallel", &parallel, task_count);
         benchmark_cpu_case(&mut group, "rayon", &rayon, task_count);
     }
     group.finish();
@@ -157,7 +145,7 @@ fn benchmark_rayon_reuse(criterion: &mut Criterion) {
                         let outcome = rayon
                             .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
                             .expect("reused Rayon batch should succeed");
-                        black_box(outcome);
+                        let _ = black_box(outcome);
                     }
                 });
             },
@@ -201,8 +189,8 @@ fn benchmark_rayon_clone_concurrent(criterion: &mut Criterion) {
                                 .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
                                 .expect("right concurrent Rayon batch should succeed")
                         });
-                        black_box(left.join().expect("left Rayon call should not panic"));
-                        black_box(right.join().expect("right Rayon call should not panic"));
+                        let _ = black_box(left.join().expect("left Rayon call should not panic"));
+                        let _ = black_box(right.join().expect("right Rayon call should not panic"));
                     });
                 });
             },
@@ -234,10 +222,7 @@ fn benchmark_no_op_case<E>(
             bencher.iter(|| {
                 let _ = black_box(
                     executor
-                        .execute_with_count(
-                            (0..task_count).map(|_| NoOpTask),
-                            task_count,
-                        )
+                        .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
                         .expect("no-op batch should succeed"),
                 );
             });
@@ -268,11 +253,7 @@ fn benchmark_cpu_case<E>(
             bencher.iter(|| {
                 let _ = black_box(
                     executor
-                        .execute_with_count(
-                            (0..task_count)
-                                .map(|seed| CpuTask { seed: seed as u64 }),
-                            task_count,
-                        )
+                        .execute_with_count((0..task_count).map(|seed| CpuTask { seed: seed as u64 }), task_count)
                         .expect("CPU batch should succeed"),
                 );
             });
