@@ -8,6 +8,7 @@
 //! Comparative baselines for sequential, scoped-thread, and Rayon execution.
 
 use std::hint::black_box;
+use std::thread;
 
 use criterion::BenchmarkId;
 use criterion::Criterion;
@@ -129,6 +130,87 @@ fn benchmark_cpu_execution(criterion: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks repeated calls that reuse one already-built Rayon executor.
+///
+/// The pool is constructed before Criterion starts measuring. Each sample
+/// measures four executor calls on the same pool.
+///
+/// # Parameters
+///
+/// * `criterion` - Criterion registry receiving benchmark cases.
+fn benchmark_rayon_reuse(criterion: &mut Criterion) {
+    const REPEATED_CALLS: usize = 4;
+    let rayon = RayonBatchExecutor::builder()
+        .thread_count(4)
+        .sequential_threshold(0)
+        .build()
+        .expect("benchmark Rayon executor configuration should be valid");
+    let mut group = criterion.benchmark_group("rayon_executor_reuse");
+
+    for task_count in BATCH_SIZES {
+        group.bench_with_input(
+            BenchmarkId::new("same_executor_repeated", task_count),
+            &task_count,
+            |bencher, &task_count| {
+                bencher.iter(|| {
+                    for _ in 0..REPEATED_CALLS {
+                        let outcome = rayon
+                            .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
+                            .expect("reused Rayon batch should succeed");
+                        black_box(outcome);
+                    }
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+/// Benchmarks concurrent calls through clones of one already-built pool.
+///
+/// The pool and both executor clones are created before Criterion starts
+/// measuring. Each sample executes two independent calls concurrently.
+///
+/// # Parameters
+///
+/// * `criterion` - Criterion registry receiving benchmark cases.
+fn benchmark_rayon_clone_concurrent(criterion: &mut Criterion) {
+    let rayon = RayonBatchExecutor::builder()
+        .thread_count(4)
+        .sequential_threshold(0)
+        .build()
+        .expect("benchmark Rayon executor configuration should be valid");
+    let left_executor = rayon.clone();
+    let right_executor = rayon.clone();
+    let mut group = criterion.benchmark_group("rayon_executor_concurrent");
+
+    for task_count in BATCH_SIZES {
+        group.bench_with_input(
+            BenchmarkId::new("clone_concurrent", task_count),
+            &task_count,
+            |bencher, &task_count| {
+                bencher.iter(|| {
+                    thread::scope(|scope| {
+                        let left = scope.spawn(|| {
+                            left_executor
+                                .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
+                                .expect("left concurrent Rayon batch should succeed")
+                        });
+                        let right = scope.spawn(|| {
+                            right_executor
+                                .execute_with_count((0..task_count).map(|_| NoOpTask), task_count)
+                                .expect("right concurrent Rayon batch should succeed")
+                        });
+                        black_box(left.join().expect("left Rayon call should not panic"));
+                        black_box(right.join().expect("right Rayon call should not panic"));
+                    });
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 /// Registers one no-op benchmark case for `executor`.
 ///
 /// # Parameters
@@ -198,5 +280,11 @@ fn benchmark_cpu_case<E>(
     );
 }
 
-criterion_group!(benches, benchmark_no_op_execution, benchmark_cpu_execution,);
+criterion_group!(
+    benches,
+    benchmark_no_op_execution,
+    benchmark_cpu_execution,
+    benchmark_rayon_reuse,
+    benchmark_rayon_clone_concurrent,
+);
 criterion_main!(benches);
