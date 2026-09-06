@@ -24,14 +24,16 @@ finite source ──> RayonBatchExecutor ──> BatchOutcome / BatchCallResult
                          │                 ├─ successful callable values
                          │                 └─ partial result on batch errors
                          ├─ dedicated pool reused across calls
-                         └─ same-pool reentry falls back to sequential work
+                         ├─ small batches use qubit-batch's sequential executor
+                         └─ larger batches use Rayon in_place_scope_fifo
 ```
 
 The executor chooses sequential execution when the declared count is at or
-below `sequential_threshold`, when it has one worker, or when the caller is
-already running on this executor's own Rayon pool. The last case is a
-reentrancy safeguard: a task can call a clone of the same executor without
-waiting for a worker that is occupied by its parent task.
+below `sequential_threshold` or when it has one worker. Larger batches are
+submitted through Rayon’s `in_place_scope_fifo`. The executor does not provide
+a separate same-pool sequential path: a call made from one of its workers is
+still scheduled through that Rayon pool and may be subject to nested waiting
+constraints.
 
 ## Scenario: Run a CPU Validation Batch
 
@@ -84,8 +86,7 @@ batch-level error with the partial result attached.
 
 Build one executor for the workload, then reuse it for calls of different
 finite sizes. Choose `thread_count` and `sequential_threshold` from measured
-workloads. A threshold of zero asks for Rayon workers for every non-empty batch
-that is not already running in the same pool.
+workloads. A threshold of zero asks for Rayon workers for every non-empty batch.
 
 `execute` and `execute_with_count` accept `Runnable` tasks. `call` and
 `call_with_count` adapt `Callable` tasks and collect successful values. The
@@ -104,14 +105,20 @@ own state rather than sharing one mutable callable across workers.
 
 ## Advanced Usage
 
-### Reentrant use of the same pool
+### Nested calls on the same pool
 
 `RayonBatchExecutor` implements `Clone`; clones share the pool and the
 executor configuration. If a task running on that pool invokes a clone, the
-nested call is executed sequentially on the current worker. This preserves the
-synchronous call contract and avoids nested pool deadlock. It does not merge
-the nested call's outcome into the outer outcome: the task must inspect or
-translate that result according to the application's error model.
+nested call is still submitted through Rayon. Rayon may run it with an available
+worker, but nested calls can be constrained by the workers occupied by the
+outer batch and may wait according to Rayon scheduling. This crate does not
+provide a same-pool sequential fallback. The nested call's outcome is not
+merged into the outer outcome: the task must inspect or translate that result
+according to the application's error model.
+
+When nested work is unavoidable, leave enough worker capacity for the nested
+batch or arrange the outer and inner work on different pools. Treat a nested
+call as a separate batch with its own scheduling and error boundary.
 
 For example, an outer task can make a small nested call and translate its
 batch-level error into the outer task's error type:
@@ -225,7 +232,7 @@ the error.
 | Symptom | Check | Action |
 | --- | --- | --- |
 | A small batch does not use Rayon workers | `sequential_threshold()` and declared count | Lower the threshold only after benchmarking. |
-| A task invokes the same executor | Whether the task runs on this executor's pool | The nested call deliberately uses sequential fallback; inspect its result inside the task. |
+| A task invokes the same executor | Whether the outer batch leaves worker capacity for nested work | The nested call remains subject to Rayon scheduling and may wait; leave capacity or use a different pool, then inspect its result inside the task. |
 | `call` rejects a type at compile time | `Callable`, `Send` for callable/value/error | Use the Rayon trait path with sendable values, or use `SequentialBatchExecutor` for local non-`Send` callables. |
 | `Ok` result contains failures | `outcome().is_success()` and `failures()` | Classify each indexed task error or panic. |
 | A chunk retry duplicates effects | Delegate transaction and idempotency guarantees | Do not retry blindly from the successful prefix; use the domain's local result and retry boundary. |
@@ -239,8 +246,9 @@ the error.
   caller drops or consumes it.
 - `for_each` actions must be `Fn + Send + Sync`; callable operations are
   `FnMut`-like through `&mut self`, with Rayon `Send` requirements.
-- Same-pool reentrancy falls back to sequential execution. It does not create
-  extra parallelism or combine nested outcomes.
+- Same-pool nested calls remain scheduled through Rayon and can be constrained
+  by workers occupied by the outer batch. This crate does not provide a
+  same-pool sequential fallback or combine nested outcomes.
 - Progress intervals throttle implementation-defined progress points; they do
   not guarantee an immediate event at a wall-clock deadline.
 - Choose retry behavior from side-effect, transaction, and idempotency rules;

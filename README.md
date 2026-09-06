@@ -20,12 +20,16 @@ The crate provides:
 - `RayonBatchExecutor`: a Rayon-backed batch executor with a dedicated thread
   pool.
 - `RayonBatchExecutorBuilder`: configuration for worker count, sequential
-  fallback threshold, progress reporting, thread names, and stack size.
+  execution threshold, progress reporting, thread names, and stack size.
 - `RayonBatchExecutorBuildError`: build-time validation and Rayon pool errors.
 
-The executor owns one dedicated Rayon pool and reuses it across calls. If a
-call is made from a worker in that same pool, it falls back to sequential
-execution so nested work cannot wait for its own workers.
+The executor owns one dedicated Rayon pool and reuses it across calls. Batches
+at or below `sequential_threshold`, or an executor configured with one worker,
+use the sequential executor supplied by `qubit-batch`. Larger batches are
+submitted through Rayon’s `in_place_scope_fifo`; if a task calls the same
+executor from one of its workers, the nested call remains subject to Rayon’s
+pool scheduling and waiting behavior. This crate does not provide a separate
+same-pool sequential fallback.
 
 Import core batch and progress types directly from `qubit-batch` and
 `qubit-progress`; this crate exports only its Rayon-specific executor API.
@@ -33,8 +37,8 @@ Import core batch and progress types directly from `qubit-batch` and
 ## Features
 
 - Run CPU-oriented batch work on a dedicated Rayon pool.
-- Fall back to sequential execution for small batches while preserving the
-  parallel executor's collect-all task-failure behavior.
+- Delegate small batches to `qubit-batch`'s sequential executor while
+  preserving the parallel executor's collect-all task-failure behavior.
 - Keep stable task indexes for failures even when work finishes out of order.
 - Capture task panics as batch failures while propagating progress-reporter
   panics.
@@ -85,8 +89,8 @@ assert_eq!(result.failure_count(), 0);
 ```
 
 See the [English user guide](doc/user_guide.md) for execution contracts,
-reentrancy, result memory, and chunk retry boundaries. Chinese readers can use
-the [中文用户手册](doc/user_guide.zh_CN.md).
+nested-pool scheduling, result memory, and chunk retry boundaries. Chinese
+readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 
 ## Testing
 
