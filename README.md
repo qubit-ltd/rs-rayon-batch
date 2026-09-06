@@ -23,6 +23,10 @@ The crate provides:
   fallback threshold, progress reporting, thread names, and stack size.
 - `RayonBatchExecutorBuildError`: build-time validation and Rayon pool errors.
 
+The executor owns one dedicated Rayon pool and reuses it across calls. If a
+call is made from a worker in that same pool, it falls back to sequential
+execution so nested work cannot wait for its own workers.
+
 Import core batch and progress types directly from `qubit-batch` and
 `qubit-progress`; this crate exports only its Rayon-specific executor API.
 
@@ -35,6 +39,21 @@ Import core batch and progress types directly from `qubit-batch` and
 - Capture task panics as batch failures while propagating progress-reporter
   panics.
 - Reuse the `qubit-batch` core API without forcing Rayon on sequential users.
+
+`BatchExecutor::call` runs each `Callable` through its `&mut self` call
+operation (the callable equivalent of `FnMut`). Rayon calls still require the
+callable, result, and error types to be `Send`; the `for_each` trait methods
+retain their `Fn + Send + Sync` action bound. A successful input count measures
+items accepted by the batch API. Domain measurements such as affected database
+rows belong in the application result, not in that input count.
+
+Callable results retain successful values and failure details, so their result
+storage is O(S + F) for S successes and F failures, plus the sizes of the
+stored values and errors. The API is not a streaming result channel. When a
+large logical input is split into chunks, each chunk has its own outcome and
+retry boundary; a failed chunk does not provide automatic cross-chunk retry or
+global failure policy. The [user guide](doc/user_guide.md) includes a bounded,
+bilingual chunking example.
 
 ## Installation
 
@@ -64,6 +83,10 @@ let result = executor
 assert_eq!(result.completed_count(), 8);
 assert_eq!(result.failure_count(), 0);
 ```
+
+See the [English user guide](doc/user_guide.md) for execution contracts,
+reentrancy, result memory, and chunk retry boundaries. Chinese readers can use
+the [中文用户手册](doc/user_guide.zh_CN.md).
 
 ## Testing
 
