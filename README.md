@@ -24,12 +24,12 @@ The crate provides:
 - `RayonBatchExecutorBuildError`: build-time validation and Rayon pool errors.
 
 The executor owns one dedicated Rayon pool and reuses it across calls. Batches
-at or below `sequential_threshold`, or an executor configured with one worker,
-use the sequential executor supplied by `qubit-batch`. Larger batches are
-submitted through Rayon’s `in_place_scope_fifo`; if a task calls the same
-executor from one of its workers, the nested call remains subject to Rayon’s
-pool scheduling and waiting behavior. This crate does not provide a separate
-same-pool sequential fallback.
+at or below `sequential_threshold`, an executor configured with one worker, or a
+call made from a worker in that same pool use the sequential executor supplied
+by `qubit-batch`. Larger batches are submitted through Rayon’s
+`in_place_scope_fifo`. The same-pool branch is a reentrancy safeguard: nested
+work runs on the current worker instead of waiting for the pool workers
+occupied by its parent task.
 
 Import core batch and progress types directly from `qubit-batch` and
 `qubit-progress`; this crate exports only its Rayon-specific executor API.
@@ -37,8 +37,9 @@ Import core batch and progress types directly from `qubit-batch` and
 ## Features
 
 - Run CPU-oriented batch work on a dedicated Rayon pool.
-- Delegate small batches to `qubit-batch`'s sequential executor while
-  preserving the parallel executor's collect-all task-failure behavior.
+- Delegate small batches and same-pool nested batches to `qubit-batch`'s
+  sequential executor while preserving the parallel executor's collect-all
+  task-failure behavior.
 - Keep stable task indexes for failures even when work finishes out of order.
 - Capture task panics as batch failures while propagating progress-reporter
   panics.
@@ -89,7 +90,7 @@ assert_eq!(result.failure_count(), 0);
 ```
 
 See the [English user guide](doc/user_guide.md) for execution contracts,
-nested-pool scheduling, result memory, and chunk retry boundaries. Chinese
+same-pool reentrancy, result memory, and chunk retry boundaries. Chinese
 readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 
 ## Testing

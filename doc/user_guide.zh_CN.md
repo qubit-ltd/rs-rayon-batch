@@ -22,13 +22,14 @@
                    │                  └─ 批次错误附带的部分结果
                    ├─ 多次调用复用专用线程池
                    ├─ 小批次使用 qubit-batch 的顺序执行器
+                   ├─ 同池重入使用 qubit-batch 的顺序执行器
                    └─ 大批次使用 Rayon in_place_scope_fifo
 ```
 
-当声明数量不超过 `sequential_threshold` 或 worker 数为 1 时，执行器会选择顺序路径。大批次
-通过 Rayon 的 `in_place_scope_fifo` 提交；
-本 crate 没有单独的同池顺序路径：如果调用发生在自己的 worker 中，仍会交给该 Rayon
-线程池调度，并可能受到嵌套等待约束。
+当声明数量不超过 `sequential_threshold`、worker 数为 1，或者调用者已经位于该执行器的
+Rayon 线程池中时，执行器会选择顺序路径。大批次通过 Rayon 的 `in_place_scope_fifo` 提交。
+同池分支用于保护重入：任务可以调用同一执行器的 clone，嵌套批次会在当前 worker 上顺序执行，
+不会等待被父任务占用的 worker。
 
 ## 实战场景：执行 CPU 校验批次
 
@@ -78,8 +79,8 @@ assert_eq!(result.outputs().len(), 7);
 ## 核心工作流
 
 针对一类工作负载创建一个执行器，然后复用它处理不同大小的有限批次。应通过实际负载
-测量选择 `thread_count` 与 `sequential_threshold`。阈值为 0 表示对每个非空批次请求
-Rayon worker。
+测量选择 `thread_count` 与 `sequential_threshold`。阈值为 0 表示对每个尚未运行在同一线程池
+中的非空批次请求 Rayon worker。
 
 `execute` 与 `execute_with_count` 接收 `Runnable` 任务。`call` 与 `call_with_count` 接收
 `Callable`，并收集成功返回值。Exact-size 版本从迭代器推导声明数量；如果数量来自数据库
@@ -94,16 +95,12 @@ worker 共享一个可变 callable。
 
 ## 进阶用法
 
-### 同一线程池中的嵌套调用
+### 同一线程池的重入
 
 `RayonBatchExecutor` 实现了 `Clone`；clone 之间共享线程池和执行器配置。如果某个任务在该
-线程池上运行时调用同一执行器的 clone，嵌套调用仍会通过 Rayon 提交。Rayon 可能使用可用
-worker 执行它，但外层批次占用 worker 时，嵌套调用会受到线程池调度和等待行为约束。本 crate
-不提供专门的同池顺序回退。嵌套调用的结果不会自动合并到外层结果；任务应按应用的错误模型
-检查或转换这个结果。
-
-如果无法避免嵌套工作，应为嵌套批次预留足够的 worker，或让外层和内层工作使用不同的线程池。
-嵌套调用应当作为具有独立调度和错误边界的批次处理。
+线程池上运行时调用同一执行器的 clone，嵌套调用会在当前 worker 上顺序执行。这样仍保持
+同步调用契约，并避免嵌套线程池死锁。嵌套调用的结果不会自动合并到外层结果；任务应按应用
+的错误模型检查或转换这个结果。
 
 例如，外层任务可以执行一个小的嵌套批次，并把批次级错误转换成外层任务的错误类型：
 
@@ -206,7 +203,7 @@ reporter 失败会作为批次级进度错误返回。调度失败或数量不�
 | 现象 | 检查项 | 处理方式 |
 | --- | --- | --- |
 | 小批次没有使用 Rayon worker | `sequential_threshold()` 与声明数量 | 先基于基准测试，再考虑降低阈值。 |
-| 任务调用了同一个执行器 | 外层批次是否为嵌套工作保留 worker | 嵌套调用仍受 Rayon 调度约束，可能等待；请预留 worker 或使用不同线程池，并在任务内检查结果。 |
+| 任务调用了同一个执行器 | 任务是否运行在该执行器线程池中 | 嵌套调用会使用顺序回退；在任务内检查它的结果。 |
 | `call` 在编译期拒绝类型 | `Callable` 以及 callable/返回值/错误的 `Send` | Rayon 路径使用可发送类型；本地非 `Send` callable 改用 `SequentialBatchExecutor`。 |
 | `Ok` 结果仍有失败 | `outcome().is_success()` 与 `failures()` | 逐项处理带下标的任务错误或 panic。 |
 | 重试 chunk 造成重复副作用 | delegate 的事务和幂等保证 | 不要只依据成功前缀盲目重试；按领域结果和局部边界处理。 |
@@ -218,8 +215,7 @@ reporter 失败会作为批次级进度错误返回。调度失败或数量不�
 - 线程池可以复用，但每个批次的结果仍会保留到调用方消费或释放。
 - `for_each` action 必须满足 `Fn + Send + Sync`；callable 通过 `&mut self` 表现为
   `FnMut`，并且 Rayon 路径要求相关类型实现 `Send`。
-- 同池嵌套调用仍通过 Rayon 调度，可能受到外层批次占用 worker 的限制。本 crate 不提供专门
-  的同池顺序回退，也不会自动合并嵌套结果。
+- 同池重入会使用顺序执行，不会额外制造并行度，也不会自动合并嵌套结果。
 - 进度间隔只会在实现定义的进度点做节流，不保证到达墙上时限就立即产生事件。
 - 重试行为应依据副作用、事务和幂等规则决定；部分结果表示统计边界，不表示未报告工作
   一定没有发生。
