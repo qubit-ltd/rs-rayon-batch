@@ -51,28 +51,23 @@ const COORDINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Runs one test in an independently terminable subprocess.
 fn run_with_watchdog(test_name: &str, child_environment: &str) {
-    let mut child = Command::new(
-        std::env::current_exe().expect("the current test executable should be available"),
-    )
-    .arg("--exact")
-    .arg(test_name)
-    .arg("--nocapture")
-    .env(child_environment, "1")
-    .stdin(Stdio::null())
-    .stdout(Stdio::inherit())
-    .stderr(Stdio::inherit())
-    .spawn()
-    .expect("the runtime-contract test subprocess should start");
+    let mut child = Command::new(std::env::current_exe().expect("the current test executable should be available"))
+        .arg("--exact")
+        .arg(test_name)
+        .arg("--nocapture")
+        .env(child_environment, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("the runtime-contract test subprocess should start");
     let deadline = Instant::now() + WATCHDOG_TIMEOUT;
     loop {
         if let Some(status) = child
             .try_wait()
             .expect("the runtime-contract subprocess should remain observable")
         {
-            assert!(
-                status.success(),
-                "runtime-contract subprocess failed: {status}"
-            );
+            assert!(status.success(), "runtime-contract subprocess failed: {status}");
             return;
         }
         if Instant::now() >= deadline {
@@ -134,10 +129,7 @@ impl TaskGate {
 
     /// Releases every current and future waiter.
     fn release_all(&self) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .released = true;
+        self.state.lock().unwrap_or_else(PoisonError::into_inner).released = true;
         self.changed.notify_all();
     }
 }
@@ -302,11 +294,7 @@ fn test_cloned_executor_concurrent_calls_remain_independent() {
                     second_worker_gate.wait();
                 }
                 second_count_by_task.fetch_add(1, Ordering::AcqRel);
-                if index == 7 {
-                    Err("second batch marker")
-                } else {
-                    Ok(())
-                }
+                if index == 7 { Err("second batch marker") } else { Ok(()) }
             })
         });
 
@@ -473,10 +461,7 @@ fn test_running_reporter_failure_drains_accepted_tasks() {
     }
     assert_eq!(observed_count, MAX_UNFINISHED_ACCEPTED);
     assert_eq!(completed.load(Ordering::Acquire), 0);
-    assert!(matches!(
-        result_receiver.try_recv(),
-        Err(mpsc::TryRecvError::Empty)
-    ));
+    assert!(matches!(result_receiver.try_recv(), Err(mpsc::TryRecvError::Empty)));
     allow_failure_sender
         .send(())
         .expect("the running reporter should be released to fail");
