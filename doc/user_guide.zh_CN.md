@@ -227,3 +227,14 @@ reporter 失败会作为批次级进度错误返回。调度失败或数量不�
 - [API 文档](https://docs.rs/qubit-rayon-batch)
 - [核心 batch crate](https://docs.rs/qubit-batch)
 - [Crate 发布页](https://crates.io/crates/qubit-rayon-batch)
+
+## 来源耗尽与重入
+
+运行时相关的调度器应通过 `ParallelBatchExecutionContext::next_task` 拉取惰性来源。
+它会把来源返回的 `None` 记录为耗尽；耗尽之前的 `None` 可能表示 reporter 或失败策略
+已经停止准入。返回前始终会排空已经接受的 token。已经观察到来源耗尽时，会先返回声明
+数量不足；否则提前因策略停止会返回 `StoppedByTaskFailurePolicy` 的部分结果。`Finished`
+并不表示结果一定成功。
+
+Rayon worker 上的同池重入和惰性来源生产线程上的同池重入都会回退到顺序执行。独立线程
+池和并发克隆仍保持并行。

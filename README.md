@@ -134,3 +134,12 @@ This software is licensed under the [Apache License, Version 2.0](LICENSE).
 | **Repository** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
 | **API documentation** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
 | **Crate** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
+
+## Source reentrancy and termination
+
+When a scheduler produces a lazy source, same-pool reentry from that producer
+thread is detected and falls back to sequential execution. Reentry from a
+Rayon worker has the same fallback, while independent pools and cloned
+executors remain parallel. Use `ParallelBatchExecutionContext::next_task` so
+source exhaustion is distinguished from a failure-policy stop; accepted tokens
+are drained before return.

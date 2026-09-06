@@ -121,3 +121,10 @@ Copyright (c) 2026. Haixing Hu.
 | **源码仓库** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
 | **API 文档** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
 | **Crate 发布** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
+
+## 来源重入与终止
+
+当调度器正在生产惰性来源时，会检测生产线程上的同池重入并回退到顺序执行；Rayon
+worker 上的重入也采用相同回退。独立线程池和克隆的执行器仍保持并行。请使用
+`ParallelBatchExecutionContext::next_task` 区分来源耗尽与失败策略停止；返回前会排空
+已经接受的 token。

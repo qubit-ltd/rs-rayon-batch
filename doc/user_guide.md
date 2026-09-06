@@ -258,3 +258,18 @@ the error.
 - [API documentation](https://docs.rs/qubit-rayon-batch)
 - [Core batch crate](https://docs.rs/qubit-batch)
 - [Crate package](https://crates.io/crates/qubit-rayon-batch)
+
+## Source exhaustion and reentrancy
+
+Runtime-specific schedulers should pull lazy sources through
+`ParallelBatchExecutionContext::next_task`. It records a source `None` as
+exhaustion, while a `None` before exhaustion can mean that a reporter or the
+failure policy stopped admission. Accepted tokens are always drained before
+return. If exhaustion was observed, a declared-count shortfall is reported
+before the failure-policy termination; otherwise an early policy stop returns a
+partial outcome with `StoppedByTaskFailurePolicy`. `Finished` does not imply
+that the outcome is successful.
+
+Both a same-pool Rayon worker reentry and same-pool reentry from a lazy-source
+producer fall back to sequential execution. Independent pools and concurrent
+clones retain parallel execution.
