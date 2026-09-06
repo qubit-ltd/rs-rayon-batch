@@ -12,6 +12,7 @@
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod active_batch_guard;
 mod constants;
 mod rayon_batch_executor;
 mod rayon_batch_executor_build_error;
