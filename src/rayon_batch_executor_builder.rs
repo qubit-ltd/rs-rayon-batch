@@ -130,10 +130,7 @@ impl RayonBatchExecutorBuilder {
     /// Sets the policy that controls Rayon source acceptance after task
     /// errors or captured panics.
     #[inline]
-    pub const fn task_failure_policy(
-        mut self,
-        task_failure_policy: TaskFailurePolicy,
-    ) -> Self {
+    pub const fn task_failure_policy(mut self, task_failure_policy: TaskFailurePolicy) -> Self {
         self.task_failure_policy = task_failure_policy;
         self
     }
@@ -148,10 +145,7 @@ impl RayonBatchExecutorBuilder {
     ///
     /// This builder for fluent configuration.
     #[inline]
-    pub fn thread_name_prefix(
-        mut self,
-        thread_name_prefix: impl Into<String>,
-    ) -> Self {
+    pub fn thread_name_prefix(mut self, thread_name_prefix: impl Into<String>) -> Self {
         self.thread_name_prefix = thread_name_prefix.into();
         self
     }
@@ -182,9 +176,7 @@ impl RayonBatchExecutorBuilder {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn build(
-        self,
-    ) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
+    pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
         if self.thread_count == 0 {
             return Err(RayonBatchExecutorBuildError::ZeroThreadCount);
         }
@@ -213,13 +205,11 @@ impl Default for RayonBatchExecutorBuilder {
     fn default() -> Self {
         Self {
             thread_count: RayonBatchExecutor::default_thread_count(),
-            sequential_threshold:
-                RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
+            sequential_threshold: RayonBatchExecutor::DEFAULT_SEQUENTIAL_THRESHOLD,
             report_interval: RayonBatchExecutor::DEFAULT_REPORT_INTERVAL,
             reporter: Arc::new(NoopReporter),
             task_failure_policy: TaskFailurePolicy::Continue,
-            thread_name_prefix: crate::constants::DEFAULT_THREAD_NAME_PREFIX
-                .to_owned(),
+            thread_name_prefix: crate::constants::DEFAULT_THREAD_NAME_PREFIX.to_owned(),
             stack_size: None,
         }
     }

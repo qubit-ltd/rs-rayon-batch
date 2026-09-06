@@ -70,12 +70,10 @@ pub struct RayonBatchExecutor {
 
 impl RayonBatchExecutor {
     /// Default interval between progress callbacks.
-    pub const DEFAULT_REPORT_INTERVAL: Duration =
-        crate::constants::DEFAULT_REPORT_INTERVAL;
+    pub const DEFAULT_REPORT_INTERVAL: Duration = crate::constants::DEFAULT_REPORT_INTERVAL;
 
     /// Default sequential fallback threshold.
-    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize =
-        crate::constants::DEFAULT_SEQUENTIAL_THRESHOLD;
+    pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize = crate::constants::DEFAULT_SEQUENTIAL_THRESHOLD;
 
     /// Returns the default Rayon worker-thread count used by the builder.
     ///
@@ -84,9 +82,7 @@ impl RayonBatchExecutor {
     /// The available CPU parallelism, or `1` if it cannot be detected.
     #[inline]
     pub fn default_thread_count() -> usize {
-        thread::available_parallelism()
-            .map(usize::from)
-            .unwrap_or(1)
+        thread::available_parallelism().map(usize::from).unwrap_or(1)
     }
 
     /// Creates a builder for configuring a Rayon batch executor.
@@ -114,9 +110,7 @@ impl RayonBatchExecutor {
     /// Returns [`RayonBatchExecutorBuildError`] when the supplied
     /// configuration is invalid or Rayon rejects it.
     #[inline]
-    pub fn new(
-        thread_count: usize,
-    ) -> Result<Self, RayonBatchExecutorBuildError> {
+    pub fn new(thread_count: usize) -> Result<Self, RayonBatchExecutorBuildError> {
         Self::builder().thread_count(thread_count).build()
     }
 
@@ -138,18 +132,12 @@ impl RayonBatchExecutor {
     ///
     /// A new [`RayonBatchExecutor`] using the supplied pool and configuration.
     #[inline]
-    pub(crate) fn new_with_rayon(
-        pool: RayonThreadPool,
-        builder: RayonBatchExecutorBuilder,
-    ) -> Self {
+    pub(crate) fn new_with_rayon(pool: RayonThreadPool, builder: RayonBatchExecutorBuilder) -> Self {
         Self {
             pool: Arc::new(pool),
             thread_count: builder.thread_count,
             sequential_threshold: builder.sequential_threshold,
-            coordinator: ParallelBatchExecutionCoordinator::new(
-                builder.reporter,
-                builder.report_interval,
-            ),
+            coordinator: ParallelBatchExecutionCoordinator::new(builder.reporter, builder.report_interval),
             task_failure_policy: builder.task_failure_policy,
         }
     }
@@ -256,26 +244,20 @@ impl BatchExecutor for RayonBatchExecutor {
         T: Runnable<E> + Send,
         E: Send,
     {
-        if self.pool.current_thread_index().is_some()
-            || count <= self.sequential_threshold
-            || self.thread_count <= 1
-        {
+        if self.pool.current_thread_index().is_some() || count <= self.sequential_threshold || self.thread_count <= 1 {
             let sequential = SequentialBatchExecutor::builder()
                 .report_interval(self.coordinator.report_interval())
                 .reporter_arc(Arc::clone(self.coordinator.reporter()))
                 .task_failure_policy(self.task_failure_policy)
                 .build();
-            return sequential.execute_with_count(tasks, count).map_err(
-                |error| error.map_scheduler_error(|never| match never {}),
-            );
+            return sequential
+                .execute_with_count(tasks, count)
+                .map_err(|error| error.map_scheduler_error(|never| match never {}));
         }
 
         let worker_count = self.thread_count.min(count);
-        self.coordinator.execute(
-            tasks,
-            count,
-            self.task_failure_policy,
-            move |tasks, context| {
+        self.coordinator
+            .execute(tasks, count, self.task_failure_policy, move |tasks, context| {
                 self.pool.in_place_scope_fifo(|scope| {
                     let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
                     let work_receiver = Arc::new(Mutex::new(work_receiver));
@@ -299,8 +281,7 @@ impl BatchExecutor for RayonBatchExecutor {
                     drop(work_sender);
                     Ok(())
                 })
-            },
-        )
+            })
     }
 }
 
@@ -318,10 +299,7 @@ fn run_rayon_worker<T, E>(
     E: Send,
 {
     loop {
-        let received = work_receiver
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .recv();
+        let received = work_receiver.lock().unwrap_or_else(PoisonError::into_inner).recv();
         let Ok(task) = received else {
             break;
         };
