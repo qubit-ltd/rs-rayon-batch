@@ -256,7 +256,10 @@ impl BatchExecutor for RayonBatchExecutor {
         T: Runnable<E> + Send,
         E: Send,
     {
-        if count <= self.sequential_threshold || self.thread_count <= 1 {
+        if self.pool.current_thread_index().is_some()
+            || count <= self.sequential_threshold
+            || self.thread_count <= 1
+        {
             let sequential = SequentialBatchExecutor::builder()
                 .report_interval(self.coordinator.report_interval())
                 .reporter_arc(Arc::clone(self.coordinator.reporter()))
