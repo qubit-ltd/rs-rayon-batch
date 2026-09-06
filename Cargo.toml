@@ -44,3 +44,7 @@ criterion = { version = "0.8.2", default-features = false }
 [[bench]]
 name = "rayon_batch_executor_bench"
 harness = false
+
+[[bench]]
+name = "scheduling_matrix_bench"
+harness = false
