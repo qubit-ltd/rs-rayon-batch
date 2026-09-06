@@ -18,12 +18,15 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 它提供：
 
 - `RayonBatchExecutor`：基于专用 Rayon 线程池的批量执行器。
-- `RayonBatchExecutorBuilder`：配置工作线程数量、顺序退化阈值、进度回调、
+- `RayonBatchExecutorBuilder`：配置工作线程数量、顺序执行阈值、进度回调、
   线程名和栈大小。
 - `RayonBatchExecutorBuildError`：构建期配置校验和 Rayon 线程池错误。
 
-执行器拥有一个专用 Rayon 线程池，并在多次调用之间复用它。如果调用发生在该线程池
-自己的 worker 中，会退化为顺序执行，避免嵌套任务等待自身 worker。
+执行器拥有一个专用 Rayon 线程池，并在多次调用之间复用它。当批次大小不超过
+`sequential_threshold`，或执行器只配置了一个 worker 时，使用 `qubit-batch` 提供的顺序
+执行器。更大的批次通过 Rayon 的 `in_place_scope_fifo` 提交；如果任务在该线程池的 worker
+中调用同一执行器，嵌套调用仍由 Rayon 线程池调度，并受其等待行为约束。本 crate 不提供
+专门的同池顺序回退。
 
 核心批处理和进度类型请直接从 `qubit-batch` 与 `qubit-progress` 导入；本 crate
 只导出 Rayon 专属的执行器 API。
@@ -31,7 +34,7 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 ## 特性
 
 - 使用专用 Rayon 线程池执行面向 CPU 的批量任务。
-- 对小批量任务自动退化为顺序执行。
+- 将小批量任务交给 `qubit-batch` 的顺序执行器。
 - 即使任务乱序完成，也能用稳定任务索引记录失败项。
 - 将任务 panic 捕获为批量失败，同时继续传播进度回调中的 panic。
 - 复用 `qubit-batch` 核心 API，不让顺序执行用户被迫引入 Rayon。
@@ -76,7 +79,7 @@ assert_eq!(result.completed_count(), 8);
 assert_eq!(result.failure_count(), 0);
 ```
 
-有关执行契约、重入回退、结果内存和 chunk 重试边界，请阅读[中文用户手册](doc/user_guide.zh_CN.md)。
+有关执行契约、嵌套线程池调度、结果内存和 chunk 重试边界，请阅读[中文用户手册](doc/user_guide.zh_CN.md)。
 英文读者可查看[English user guide](doc/user_guide.md)。
 
 ## 测试
