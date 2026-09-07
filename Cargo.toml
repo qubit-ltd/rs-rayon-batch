@@ -1,6 +1,6 @@
 [package]
 name = "qubit-rayon-batch"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
@@ -34,7 +34,7 @@ doctest = true
 [dependencies]
 qubit-function = "0.16"
 qubit-progress = { version = "0.8", path = "../rs-progress", default-features = false }
-qubit-batch = { version = "0.10", path = "../rs-batch" }
+qubit-batch = { version = "0.11", path = "../rs-batch" }
 rayon = "1.12"
 thiserror = "2.0"
 
