@@ -93,48 +93,6 @@ See the [English user guide](doc/user_guide.md) for execution contracts,
 same-pool reentrancy, result memory, and chunk retry boundaries. Chinese
 readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 
-## Testing
-
-Run the local checks from the crate root:
-
-```bash
-cargo test
-cargo clippy --all-targets -- -D warnings
-```
-
-To match the repository CI environment, run:
-
-```bash
-./align-ci.sh
-./ci-check.sh
-./coverage.sh json
-```
-
-## Contributing
-
-Issues and pull requests are welcome. Keep changes focused, add regression
-tests for behavior changes, and update both README files when public APIs or
-user-visible behavior changes.
-
-By contributing, you agree that your contribution is licensed under the same
-[Apache License, Version 2.0](LICENSE) as this project.
-
-## License
-
-Copyright (c) 2026. Haixing Hu.
-
-This software is licensed under the [Apache License, Version 2.0](LICENSE).
-
-## Author
-
-**Haixing Hu** — Qubit Co. Ltd.
-
-| | |
-| --- | --- |
-| **Repository** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
-| **API documentation** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
-| **Crate** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
-
 ## Source reentrancy and termination
 
 When a scheduler produces a lazy source, same-pool reentry from that producer
@@ -143,3 +101,44 @@ Rayon worker has the same fallback, while independent pools and cloned
 executors remain parallel. Use `ParallelBatchExecutionContext::next_task` so
 source exhaustion is distinguished from a failure-policy stop; accepted tokens
 are drained before return.
+
+Callable small-batch and single-worker fallbacks collect outputs directly on
+the caller thread; Rayon same-pool reentry uses that path too. A policy stop can
+still have `completed_count == task_count`, while `Finished` can include task
+failures. Use counters and failure indexes alongside termination when deciding
+what to retry; see the [user guide](doc/user_guide.md).
+
+## Testing
+
+```bash
+# Run tests with the default feature set
+cargo test
+
+# Run tests with all declared features
+cargo test --all-features
+
+# Project CI checks
+./ci-check.sh
+
+# Check code coverage
+./coverage.sh
+```
+
+## License
+
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full license text.
+
+## Contributing
+
+Contributions are welcome. Please follow the Rust API guidelines, keep public
+API documentation and tests current, and run `./align-ci.sh` to format code and
+`./ci-check.sh` to satisfy CI requirements before submitting a pull request.
+
+## Author
+
+**Haixing Hu** - *Qubit Co. Ltd.*
+
+Repository: [https://github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch)
