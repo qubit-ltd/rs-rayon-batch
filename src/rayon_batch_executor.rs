@@ -13,6 +13,8 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
 
+use qubit_batch::BatchCallError;
+use qubit_batch::BatchCallResult;
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchOutcome;
@@ -21,6 +23,8 @@ use qubit_batch::TaskFailurePolicy;
 use qubit_batch::execute::spi::ParallelBatchExecutionContext;
 use qubit_batch::execute::spi::ParallelBatchExecutionCoordinator;
 use qubit_batch::execute::spi::ParallelBatchTask;
+use qubit_batch::execute::spi::call_with_executor;
+use qubit_function::Callable;
 use qubit_function::Runnable;
 use qubit_progress::Reporter;
 use rayon::ThreadPool as RayonThreadPool;
@@ -210,6 +214,56 @@ impl Default for RayonBatchExecutor {
 
 impl BatchExecutor for RayonBatchExecutor {
     type SchedulerError = RayonBatchScheduleError;
+
+    /// Collects small or single-worker calls directly on the caller thread.
+    ///
+    /// # Parameters
+    ///
+    /// * `tasks` - Callable source, consumed once during execution.
+    /// * `count` - Exact declared count used for fallback and validation.
+    ///
+    /// # Returns
+    ///
+    /// Indexed successful values with the final or policy-stopped outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns batch count, progress or scheduling failures with partial
+    /// values.
+    ///
+    /// # Panics
+    ///
+    /// Task panics are captured; source and synchronous reporter panics
+    /// propagate.
+    fn call_with_count<C, R, E, I>(
+        &self,
+        tasks: I,
+        count: usize,
+    ) -> Result<BatchCallResult<R, E>, BatchCallError<R, E, Self::SchedulerError>>
+    where
+        I: IntoIterator<Item = C>,
+        C: Callable<R, E> + Send,
+        R: Send,
+        E: Send,
+    {
+        let active_guard = ActiveBatchGuard::enter(&self.pool);
+        let reentrant = active_guard.is_none() || self.pool.current_thread_index().is_some();
+        if reentrant || count <= self.sequential_threshold || self.thread_count <= 1 {
+            let sequential = SequentialBatchExecutor::builder()
+                .report_interval(self.coordinator.report_interval())
+                .reporter_arc(Arc::clone(self.coordinator.reporter()))
+                .task_failure_policy(self.task_failure_policy)
+                .build();
+            return sequential
+                .call_with_count(tasks, count)
+                .map_err(|error| error.map_scheduler_error(|never| match never {}));
+        }
+        // The helper defers user IntoIterator conversion until execute enters
+        // the guard again. Keeping this guard would force a false reentry.
+        drop(active_guard);
+        call_with_executor(self, tasks, count)
+    }
+
     /// Executes the batch on Rayon workers when the batch is large enough.
     ///
     /// # Parameters
