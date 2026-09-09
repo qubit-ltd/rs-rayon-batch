@@ -5,7 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/v/qubit-rayon-batch.svg?color=blue)](https://crates.io/crates/qubit-rayon-batch)
 [![Rust](https://img.shields.io/badge/rust-1.94+-blue.svg?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![English Documentation](https://img.shields.io/badge/docs-English-blue.svg)](README.md)
+[![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
 面向 Qubit Rust 库的 Rayon 批量执行器实现。
 
@@ -81,50 +81,47 @@ assert_eq!(result.failure_count(), 0);
 有关执行契约、同池重入、结果内存和 chunk 重试边界，请阅读[中文用户手册](doc/user_guide.zh_CN.md)。
 英文读者可查看[English user guide](doc/user_guide.md)。
 
-## 测试
-
-在 crate 根目录执行本地检查：
-
-```bash
-cargo test
-cargo clippy --all-targets -- -D warnings
-```
-
-若要与仓库 CI 环境保持一致，请运行：
-
-```bash
-./align-ci.sh
-./ci-check.sh
-./coverage.sh json
-```
-
-## 贡献
-
-欢迎通过 Issue 与 Pull Request 参与本仓库。请保持变更聚焦；修改行为时补充回归
-测试；公开 API 或用户可见行为变化时同步更新中英文 README。
-
-向本仓库贡献内容即表示您同意以与本项目相同的
-[Apache License, Version 2.0](LICENSE) 授权您的贡献。
-
-## 许可证
-
-Copyright (c) 2026. Haixing Hu.
-
-本软件依据 [Apache License, Version 2.0](LICENSE) 授权。
-
-## 作者
-
-**Haixing Hu** — Qubit Co. Ltd.
-
-| | |
-| --- | --- |
-| **源码仓库** | [github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch) |
-| **API 文档** | [docs.rs/qubit-rayon-batch](https://docs.rs/qubit-rayon-batch) |
-| **Crate 发布** | [crates.io/crates/qubit-rayon-batch](https://crates.io/crates/qubit-rayon-batch) |
-
 ## 来源重入与终止
 
 当调度器正在生产惰性来源时，会检测生产线程上的同池重入并回退到顺序执行；Rayon
 worker 上的重入也采用相同回退。独立线程池和克隆的执行器仍保持并行。请使用
 `ParallelBatchExecutionContext::next_task` 区分来源耗尽与失败策略停止；返回前会排空
 已经接受的 token。
+
+小批次和单 worker 的 callable 调用直接在调用线程收集输出，Rayon 同池重入也采用该路径。
+策略停止时，完成数可能已经等于声明数；`Finished` 也可能包含失败任务。判断重试范围时，
+应同时检查完成计数、失败下标和终止原因，详见[用户手册](doc/user_guide.zh_CN.md)。
+
+## 测试
+
+```bash
+# 使用默认 feature 集运行测试
+cargo test
+
+# 使用项目声明的全部 feature 运行测试
+cargo test --all-features
+
+# 运行项目 CI 检查
+./ci-check.sh
+
+# 检查代码覆盖率
+./coverage.sh
+```
+
+## 许可证
+
+Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
+
+本项目基于 Apache License 2.0 授权。完整许可证文本请参阅
+[LICENSE](LICENSE)。
+
+## 贡献
+
+欢迎贡献。请遵循 Rust API 指南，及时更新公共 API 文档与测试，并在提交
+Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对齐CI要求。
+
+## 作者
+
+**Haixing Hu** - *Qubit Co. Ltd.*
+
+仓库地址：[https://github.com/qubit-ltd/rs-rayon-batch](https://github.com/qubit-ltd/rs-rayon-batch)
