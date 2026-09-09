@@ -20,6 +20,7 @@ include = [
     "/RUST_CODING_STYLE.md",
     "/RUST_CODING_STYLE.zh_CN.md",
     "/doc/**/user_guide*.md",
+    "/doc/performance*.md",
     "/examples/**",
     "/resources/**",
     "/src/**",
@@ -47,4 +48,8 @@ harness = false
 
 [[bench]]
 name = "scheduling_matrix_bench"
+harness = false
+
+[[bench]]
+name = "call_fallback_bench"
 harness = false
