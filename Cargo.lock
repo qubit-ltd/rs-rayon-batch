@@ -286,9 +286,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-atomic"
-version = "0.13.4"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0882b1ea7463896c87872521a200cf691fb661e116525ff644381895d9e727b"
+checksum = "235ca98a7a1bb71e079d223ba7dd232fcb8f83300c73a7148a8e9950c2fa6d67"
 dependencies = [
  "arc-swap",
  "portable-atomic",
@@ -297,6 +297,8 @@ dependencies = [
 [[package]]
 name = "qubit-batch"
 version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af8c9a9fa9662d094a3794fb848a5f8dc792c78898aca84a4c7259b54852e428"
 dependencies = [
  "crossbeam-queue",
  "qubit-atomic",
@@ -313,13 +315,15 @@ checksum = "91048ed7cf5a65b23f0b6af148ec5245f84cd5364e6f4f2cb0ee15ff6fcc4a85"
 
 [[package]]
 name = "qubit-function"
-version = "0.16.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59f10e916324739b811520fbfb24746f4822ad9ea1adb53c79fc04b7c090e5ed"
+checksum = "1f6ad59d1256f6c62bc2fe153bdd87f224d7cfd7fa81b58dd8ab03aa4836f21a"
 
 [[package]]
 name = "qubit-progress"
 version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c44919d57ed57837eac506b4f20ee0177974e6411212c2bf6ae81cf84c711b3"
 dependencies = [
  "qubit-fast-cas",
 ]

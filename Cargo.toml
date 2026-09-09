@@ -33,9 +33,9 @@ name = "qubit_rayon_batch"
 doctest = true
 
 [dependencies]
-qubit-function = "0.16"
-qubit-progress = { version = "0.8", path = "../rs-progress", default-features = false }
-qubit-batch = { version = "0.11", path = "../rs-batch" }
+qubit-function = "0.18"
+qubit-progress = { version = "0.8", default-features = false }
+qubit-batch = "0.11"
 rayon = "1.12"
 thiserror = "2.0"
 
