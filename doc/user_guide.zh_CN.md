@@ -3,7 +3,7 @@
 [English user guide](user_guide.md) · [README](../README.zh_CN.md) ·
 [API 文档](https://docs.rs/qubit-rayon-batch)
 
-本文适用于 `qubit-rayon-batch` 0.9 和 Rust 1.94 及以上版本。面向需要处理有限 CPU
+本文适用于 `qubit-rayon-batch` 0.10 和 Rust 1.94 及以上版本。面向需要处理有限 CPU
 批次，并希望在专用 Rayon 线程池上复用 `qubit-batch` 结果与错误模型的应用或库作者。
 
 ## 手册目标与读者
@@ -40,8 +40,8 @@ callable 成功返回值，以及一个带下标的任务失败。
 
 ```toml
 [dependencies]
-qubit-batch = "0.11"
-qubit-rayon-batch = "0.9"
+qubit-batch = "0.12"
+qubit-rayon-batch = "0.10"
 ```
 
 ### 执行 callable 任务
