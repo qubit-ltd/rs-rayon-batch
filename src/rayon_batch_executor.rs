@@ -6,10 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::PoisonError;
-use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
 
@@ -314,12 +310,11 @@ impl BatchExecutor for RayonBatchExecutor {
 
         let worker_count = self.thread_count.min(count);
         self.coordinator
-            .execute(tasks, count, self.task_failure_policy, move |tasks, context| {
+            .execute_with_source(tasks, count, self.task_failure_policy, move |source, context| {
                 self.pool.in_place_scope_fifo(|scope| {
-                    let (work_sender, work_receiver) = mpsc::sync_channel(worker_count);
-                    let work_receiver = Arc::new(Mutex::new(work_receiver));
+                    let (work_sender, work_receiver) = crossbeam_channel::bounded(worker_count);
                     for _ in 0..worker_count {
-                        let worker_receiver = Arc::clone(&work_receiver);
+                        let worker_receiver = work_receiver.clone();
                         let worker_context = &context;
                         scope.spawn_fifo(move |_| {
                             run_rayon_worker(worker_receiver, worker_context);
@@ -327,8 +322,7 @@ impl BatchExecutor for RayonBatchExecutor {
                     }
                     drop(work_receiver);
 
-                    let mut tasks = tasks.into_iter();
-                    while let Some(task) = context.next_task(&mut tasks) {
+                    for task in source.by_ref() {
                         if work_sender.send(task).is_err() {
                             return Err(RayonBatchScheduleError::WorkChannelDisconnected);
                         }
@@ -347,15 +341,14 @@ impl BatchExecutor for RayonBatchExecutor {
 /// * `work_receiver` - Shared task receiver protected because standard
 ///   receivers are not `Sync`.
 fn run_rayon_worker<T, E>(
-    work_receiver: Arc<Mutex<Receiver<ParallelBatchTask<T>>>>,
+    work_receiver: crossbeam_channel::Receiver<ParallelBatchTask<T>>,
     context: &ParallelBatchExecutionContext<E>,
 ) where
     T: Runnable<E> + Send,
     E: Send,
 {
     loop {
-        let received = work_receiver.lock().unwrap_or_else(PoisonError::into_inner).recv();
-        let Ok(task) = received else {
+        let Ok(task) = work_receiver.recv() else {
             break;
         };
         context.execute_task(task);
