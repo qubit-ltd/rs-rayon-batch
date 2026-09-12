@@ -3,7 +3,7 @@
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md) ·
 [API documentation](https://docs.rs/qubit-rayon-batch)
 
-Applies to `qubit-rayon-batch` 0.9 and Rust 1.94 or later. This guide is for an
+Applies to `qubit-rayon-batch` 0.10 and Rust 1.94 or later. This guide is for an
 application or library author that has a finite CPU-oriented batch to execute
 and wants the `qubit-batch` result and error model on a dedicated Rayon pool.
 
@@ -47,8 +47,8 @@ values and one indexed task failure.
 
 ```toml
 [dependencies]
-qubit-batch = "0.11"
-qubit-rayon-batch = "0.9"
+qubit-batch = "0.12"
+qubit-rayon-batch = "0.10"
 ```
 
 ### Execute callable tasks

@@ -64,8 +64,8 @@ bilingual chunking example.
 
 ```toml
 [dependencies]
-qubit-batch = "0.11"
-qubit-rayon-batch = "0.9"
+qubit-batch = "0.12"
+qubit-rayon-batch = "0.10"
 ```
 
 ## Quick Start
