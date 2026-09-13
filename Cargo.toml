@@ -36,7 +36,7 @@ doctest = true
 crossbeam-channel = "0.5"
 qubit-function = "0.18"
 qubit-progress = { version = "0.8", default-features = false }
-qubit-batch = { version = "0.12", path = "../rs-batch" }
+qubit-batch = { path = "../rs-batch" }
 rayon = "1.12"
 thiserror = "2.0"
 
