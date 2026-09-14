@@ -3,7 +3,7 @@
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md) ·
 [API documentation](https://docs.rs/qubit-rayon-batch)
 
-Applies to `qubit-rayon-batch` 0.10 and Rust 1.94 or later. This guide is for an
+Applies to `qubit-rayon-batch` 0.11 and Rust 1.94 or later. This guide is for an
 application or library author that has a finite CPU-oriented batch to execute
 and wants the `qubit-batch` result and error model on a dedicated Rayon pool.
 
@@ -47,8 +47,8 @@ values and one indexed task failure.
 
 ```toml
 [dependencies]
-qubit-batch = "0.12"
-qubit-rayon-batch = "0.10"
+qubit-batch = "0.13"
+qubit-rayon-batch = "0.11"
 ```
 
 ### Execute callable tasks
@@ -297,10 +297,10 @@ the error.
 
 ## Source exhaustion and reentrancy
 
-Runtime-specific schedulers should pull lazy sources through
-`ParallelBatchExecutionContext::next_task`. It records a source `None` as
-exhaustion, while a `None` before exhaustion can mean that a reporter or the
-failure policy stopped admission. Accepted tokens are always drained before
+Runtime-specific schedulers consume the lazy source supplied by
+`execute_with_source`; context admission methods are crate-internal. A real
+source `None` records exhaustion, while an earlier `None` can mean that a
+reporter or the failure policy stopped admission. Accepted tokens are drained before
 return. If exhaustion was observed, a declared-count shortfall is reported
 before the failure-policy termination; otherwise an early policy stop returns a
 partial outcome with `StoppedByTaskFailurePolicy`. `Finished` does not imply

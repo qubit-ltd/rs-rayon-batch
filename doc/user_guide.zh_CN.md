@@ -3,7 +3,7 @@
 [English user guide](user_guide.md) · [README](../README.zh_CN.md) ·
 [API 文档](https://docs.rs/qubit-rayon-batch)
 
-本文适用于 `qubit-rayon-batch` 0.10 和 Rust 1.94 及以上版本。面向需要处理有限 CPU
+本文适用于 `qubit-rayon-batch` 0.11 和 Rust 1.94 及以上版本。面向需要处理有限 CPU
 批次，并希望在专用 Rayon 线程池上复用 `qubit-batch` 结果与错误模型的应用或库作者。
 
 ## 手册目标与读者
@@ -40,8 +40,8 @@ callable 成功返回值，以及一个带下标的任务失败。
 
 ```toml
 [dependencies]
-qubit-batch = "0.12"
-qubit-rayon-batch = "0.10"
+qubit-batch = "0.13"
+qubit-rayon-batch = "0.11"
 ```
 
 ### 执行 callable 任务
@@ -260,8 +260,8 @@ reporter 失败会作为批次级进度错误返回。调度失败或数量不�
 
 ## 来源耗尽与重入
 
-运行时相关的调度器应通过 `ParallelBatchExecutionContext::next_task` 拉取惰性来源。
-它会把来源返回的 `None` 记录为耗尽；耗尽之前的 `None` 可能表示 reporter 或失败策略
+运行时相关的调度器消费 `execute_with_source` 提供的惰性来源；上下文准入方法仅供
+crate 内部使用。来源真实返回的 `None` 记录为耗尽；此前的 `None` 可能表示 reporter 或失败策略
 已经停止准入。返回前始终会排空已经接受的 token。已经观察到来源耗尽时，会先返回声明
 数量不足；否则提前因策略停止会返回 `StoppedByTaskFailurePolicy` 的部分结果。`Finished`
 并不表示结果一定成功。

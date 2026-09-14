@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-batch"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-rayon-batch"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "criterion",
  "crossbeam-channel",
