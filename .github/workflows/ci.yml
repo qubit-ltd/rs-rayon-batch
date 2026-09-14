@@ -21,7 +21,7 @@ jobs:
       - uses: qubit-ltd/rs-dependency-policy/.github/actions/check@39895c60b725068b7a72dc14d0ae18ee60c30e46
 
   rust-ci:
-    uses: qubit-ltd/rs-ci/.github/workflows/rust-ci.yml@main
+    uses: qubit-ltd/rs-ci/.github/workflows/rust-ci.yml@cb49dc811786fb3dadf6ddc3f9537c0c7b22e1ab
     with:
       coverage_enforce_thresholds: "1"
     secrets: inherit
