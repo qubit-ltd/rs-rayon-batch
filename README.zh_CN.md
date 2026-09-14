@@ -53,8 +53,8 @@ O(S + F)，还要加上值和错误自身的堆内存开销。该 API 不是流�
 
 ```toml
 [dependencies]
-qubit-batch = "0.12"
-qubit-rayon-batch = "0.10"
+qubit-batch = "0.13"
+qubit-rayon-batch = "0.11"
 ```
 
 ## 快速开始
@@ -84,8 +84,8 @@ assert_eq!(result.failure_count(), 0);
 ## 来源重入与终止
 
 当调度器正在生产惰性来源时，会检测生产线程上的同池重入并回退到顺序执行；Rayon
-worker 上的重入也采用相同回退。独立线程池和克隆的执行器仍保持并行。请使用
-`ParallelBatchExecutionContext::next_task` 区分来源耗尽与失败策略停止；返回前会排空
+worker 上的重入也采用相同回退。独立线程池和克隆的执行器仍保持并行。Rayon 调度器
+消费 `execute_with_source` 提供的来源，以区分真实耗尽与失败策略停止；返回前会排空
 已经接受的 token。
 
 小批次和单 worker 的 callable 调用直接在调用线程收集输出，Rayon 同池重入也采用该路径。

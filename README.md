@@ -64,8 +64,8 @@ bilingual chunking example.
 
 ```toml
 [dependencies]
-qubit-batch = "0.12"
-qubit-rayon-batch = "0.10"
+qubit-batch = "0.13"
+qubit-rayon-batch = "0.11"
 ```
 
 ## Quick Start
@@ -98,9 +98,9 @@ readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 When a scheduler produces a lazy source, same-pool reentry from that producer
 thread is detected and falls back to sequential execution. Reentry from a
 Rayon worker has the same fallback, while independent pools and cloned
-executors remain parallel. Use `ParallelBatchExecutionContext::next_task` so
-source exhaustion is distinguished from a failure-policy stop; accepted tokens
-are drained before return.
+executors remain parallel. The Rayon scheduler consumes the source supplied by
+`execute_with_source`, which distinguishes real exhaustion from a failure-policy
+stop; accepted tokens are drained before return.
 
 Callable small-batch and single-worker fallbacks collect outputs directly on
 the caller thread; Rayon same-pool reentry uses that path too. A policy stop can
