@@ -306,6 +306,8 @@ dependencies = [
 [[package]]
 name = "qubit-batch"
 version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda7cb3868e08b34200016a603496acf65f36d80274e5a6990bdfc4ad7ecfb4"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
