@@ -15,8 +15,10 @@ use qubit_progress::Reporter;
 use crate::RayonBatchExecutor;
 use crate::RayonBatchExecutorBuildError;
 
-/// Default worker-thread name prefix for [`RayonBatchExecutor`].
-/// Builder for [`RayonBatchExecutor`].
+/// Builder for configuring a [`RayonBatchExecutor`].
+///
+/// The builder controls worker-pool size, sequential fallback, progress
+/// reporting, task-failure policy, worker names, and worker stack size.
 pub struct RayonBatchExecutorBuilder {
     /// Number of Rayon worker threads to create.
     pub(crate) thread_count: usize,

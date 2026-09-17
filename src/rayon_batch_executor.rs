@@ -148,6 +148,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// The configured worker-thread count.
+    #[must_use = "inspect the configured worker count"]
     #[inline]
     pub const fn thread_count(&self) -> usize {
         self.thread_count
@@ -158,12 +159,14 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// The maximum task count that still uses sequential execution.
+    #[must_use = "inspect the configured sequential threshold"]
     #[inline]
     pub const fn sequential_threshold(&self) -> usize {
         self.sequential_threshold
     }
 
     /// Returns the configured task-failure policy.
+    #[must_use = "inspect the configured task-failure policy"]
     #[inline]
     pub const fn task_failure_policy(&self) -> TaskFailurePolicy {
         self.task_failure_policy
@@ -174,6 +177,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// The minimum interval between progress callbacks.
+    #[must_use = "inspect the configured report interval"]
     #[inline]
     pub const fn report_interval(&self) -> Duration {
         self.coordinator.report_interval()
@@ -184,6 +188,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// A shared reference to the configured progress reporter.
+    #[must_use = "inspect the configured progress reporter"]
     #[inline]
     pub fn reporter(&self) -> &Arc<dyn Reporter> {
         self.coordinator.reporter()
@@ -338,8 +343,8 @@ impl BatchExecutor for RayonBatchExecutor {
 ///
 /// # Parameters
 ///
-/// * `work_receiver` - Shared task receiver protected because standard
-///   receivers are not `Sync`.
+/// * `work_receiver` - Clone of the crossbeam work receiver. Crossbeam clones
+///   share the queue safely across Rayon workers.
 fn run_rayon_worker<T, E>(
     work_receiver: crossbeam_channel::Receiver<ParallelBatchTask<T>>,
     context: &ParallelBatchExecutionContext<E>,
