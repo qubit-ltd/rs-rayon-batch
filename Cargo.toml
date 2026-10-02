@@ -28,6 +28,8 @@ include = [
     "/benches/**",
 ]
 
+[workspace]
+
 [lib]
 name = "qubit_rayon_batch"
 doctest = true
