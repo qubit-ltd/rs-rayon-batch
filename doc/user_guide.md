@@ -47,8 +47,8 @@ values and one indexed task failure.
 
 ```toml
 [dependencies]
-qubit-batch = "0.13"
-qubit-rayon-batch = "0.8"
+qubit-batch = "0.14"
+qubit-rayon-batch = "0.9"
 ```
 
 ### Execute callable tasks
