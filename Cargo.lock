@@ -305,9 +305,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-batch"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda7cb3868e08b34200016a603496acf65f36d80274e5a6990bdfc4ad7ecfb4"
+checksum = "36906eb0d583535d9a96b51f00ccc6289767dca59e1f850f319dc7219acb9b20"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -331,16 +331,16 @@ checksum = "1f6ad59d1256f6c62bc2fe153bdd87f224d7cfd7fa81b58dd8ab03aa4836f21a"
 
 [[package]]
 name = "qubit-progress"
-version = "0.8.3"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c44919d57ed57837eac506b4f20ee0177974e6411212c2bf6ae81cf84c711b3"
+checksum = "3d10d16ca6635e68ad50425113e36a027d5a5e97f944550b419fed26764f7b17"
 dependencies = [
  "qubit-fast-cas",
 ]
 
 [[package]]
 name = "qubit-rayon-batch"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "criterion",
  "crossbeam-channel",
