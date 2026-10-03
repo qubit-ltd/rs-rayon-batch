@@ -40,8 +40,8 @@ callable 成功返回值，以及一个带下标的任务失败。
 
 ```toml
 [dependencies]
-qubit-batch = "0.13"
-qubit-rayon-batch = "0.8"
+qubit-batch = "0.14"
+qubit-rayon-batch = "0.9"
 ```
 
 ### 执行 callable 任务
