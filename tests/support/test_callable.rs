@@ -48,6 +48,8 @@ impl TestCallable {
     /// # Returns
     ///
     /// A successful callable.
+    #[must_use]
+    #[inline]
     pub const fn returning(value: i32) -> Self {
         Self {
             action: TestCallableAction::Return { value },
@@ -63,6 +65,8 @@ impl TestCallable {
     /// # Returns
     ///
     /// A failing callable.
+    #[must_use]
+    #[inline]
     pub const fn fail(error: &'static str) -> Self {
         Self {
             action: TestCallableAction::Fail { error },
@@ -78,6 +82,8 @@ impl TestCallable {
     /// # Returns
     ///
     /// A panicking callable.
+    #[must_use]
+    #[inline]
     pub const fn panic(message: &'static str) -> Self {
         Self {
             action: TestCallableAction::Panic { message },

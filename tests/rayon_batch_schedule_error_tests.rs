@@ -10,7 +10,7 @@
 use qubit_rayon_batch::RayonBatchScheduleError;
 
 #[test]
-fn scheduler_error_has_stable_display() {
+fn test_scheduler_error_has_stable_display() {
     assert_eq!(
         RayonBatchScheduleError::WorkChannelDisconnected.to_string(),
         "Rayon batch work channel disconnected"

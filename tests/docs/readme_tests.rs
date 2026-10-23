@@ -34,7 +34,10 @@ fn test_readme_dependency_version_matches_cargo_toml() {
     );
     assert!(
         readme_version_documents_same_release(readme_en_rayon, package_version),
-        "README qubit-rayon-batch ({readme_en_rayon:?}) should match package version {package_version:?} (exact or minor line, e.g. 0.4 vs 0.4.1)"
+        concat!(
+            "README qubit-rayon-batch ({readme_en_rayon:?}) should match package version ",
+            "{package_version:?} (exact or minor line, e.g. 0.4 vs 0.4.1)"
+        )
     );
 
     assert_eq!(readme_en_batch, cargo_qubit_batch);

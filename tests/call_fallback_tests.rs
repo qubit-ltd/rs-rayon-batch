@@ -8,7 +8,12 @@
 //! Callable outputs and thread placement across fallback and parallel paths.
 #![allow(clippy::result_large_err)]
 use std::io;
+use std::process::Command;
+use std::process::Stdio;
+use std::sync::Barrier;
 use std::thread;
+use std::time::Duration;
+use std::time::Instant;
 
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
@@ -134,7 +139,9 @@ fn test_count_and_report_errors_preserve_outputs() {
             assert_eq!(error.outputs()[0].value().value, 0);
             match (expected, error.source()) {
                 (1, BatchExecutionError::CountExceeded { report_error, .. })
-                | (3, BatchExecutionError::CountShortfall { report_error, .. }) => assert!(report_error.is_some()),
+                | (3, BatchExecutionError::CountShortfall { report_error, .. }) => {
+                    assert!(report_error.is_some())
+                }
                 (2, BatchExecutionError::ProgressReport { .. }) => {}
                 (_, error) => panic!("unexpected error: {error:?}"),
             }
@@ -144,10 +151,6 @@ fn test_count_and_report_errors_preserve_outputs() {
 
 /// Runs the reentrancy scenario in a process that can be killed on deadlock.
 fn run_callable_watchdog() {
-    use std::process::Command;
-    use std::process::Stdio;
-    use std::time::Duration;
-    use std::time::Instant;
     let mut child = Command::new(std::env::current_exe().expect("test executable"))
         .args(["--exact", "test_callable_reentrancy_boundaries", "--nocapture"])
         .env("QUBIT_CALLABLE_REENTRANCY_CHILD", "1")
@@ -232,7 +235,7 @@ fn test_callable_reentrancy_boundaries() {
         .sequential_threshold(0)
         .build()
         .expect("second pool");
-    let barrier = std::sync::Barrier::new(2);
+    let barrier = Barrier::new(2);
     let tasks = (0..2).map(|_| {
         || {
             barrier.wait();

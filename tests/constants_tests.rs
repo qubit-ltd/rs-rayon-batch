@@ -5,12 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Tests for Rayon batch defaults.
+//! Tests for Rayon batch executor configuration.
 
 use qubit_rayon_batch::RayonBatchExecutor;
 
 #[test]
-fn default_thread_name_prefix_is_stable() {
+fn test_builder_uses_configured_thread_count() {
     let executor = RayonBatchExecutor::builder()
         .thread_count(1)
         .build()

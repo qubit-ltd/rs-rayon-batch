@@ -9,6 +9,8 @@
 
 #![allow(clippy::result_large_err)]
 
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Barrier;
@@ -184,7 +186,7 @@ fn run_same_pool_failure_cases() {
 }
 
 #[test]
-fn nested_same_pool_completes() {
+fn test_nested_same_pool_completes() {
     if std::env::var_os(SAME_POOL_CHILD).is_some() {
         for (thread_count, sequential_threshold, inner_count, outer_count) in
             [(2, 0, 16, 2), (4, 0, 16, 4), (2, 100, 128, 128)]
@@ -195,11 +197,11 @@ fn nested_same_pool_completes() {
         return;
     }
 
-    run_with_watchdog("nested_same_pool_completes", SAME_POOL_CHILD);
+    run_with_watchdog("test_nested_same_pool_completes", SAME_POOL_CHILD);
 }
 
 #[test]
-fn nested_different_pool_remains_parallel() {
+fn test_nested_different_pool_remains_parallel() {
     if std::env::var_os(DIFFERENT_POOL_CHILD).is_some() {
         let outer_executor = RayonBatchExecutor::builder()
             .thread_count(2)
@@ -232,14 +234,14 @@ fn nested_different_pool_remains_parallel() {
         return;
     }
 
-    run_with_watchdog("nested_different_pool_remains_parallel", DIFFERENT_POOL_CHILD);
+    run_with_watchdog("test_nested_different_pool_remains_parallel", DIFFERENT_POOL_CHILD);
 }
 
 #[test]
-fn nested_from_source_producer_completes() {
+fn test_nested_from_source_producer_completes() {
     const CHILD: &str = "QUBIT_BATCH_NESTED_SOURCE_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_with_watchdog("nested_from_source_producer_completes", CHILD);
+        run_with_watchdog("test_nested_from_source_producer_completes", CHILD);
         return;
     }
     let executor = RayonBatchExecutor::builder()
@@ -278,10 +280,7 @@ fn nested_from_source_producer_completes() {
 }
 
 #[test]
-fn source_panic_does_not_leak_active_guard() {
-    use std::panic::AssertUnwindSafe;
-    use std::panic::catch_unwind;
-
+fn test_source_panic_does_not_leak_active_guard() {
     struct PanicSource;
 
     impl Iterator for PanicSource {
@@ -312,7 +311,7 @@ fn source_panic_does_not_leak_active_guard() {
 }
 
 #[test]
-fn source_producer_can_use_a_different_pool_in_parallel() {
+fn test_source_producer_can_use_a_different_pool_in_parallel() {
     let outer = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(0)

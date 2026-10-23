@@ -17,7 +17,7 @@ use qubit_batch::TaskFailurePolicy;
 use qubit_rayon_batch::RayonBatchExecutor as DedicatedRayonBatchExecutor;
 
 #[test]
-fn rayon_preserves_exhausted_source_contract() {
+fn test_rayon_preserves_exhausted_source_contract() {
     for expected in [1usize, 2] {
         let executor = DedicatedRayonBatchExecutor::builder()
             .thread_count(2)
