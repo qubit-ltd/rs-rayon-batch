@@ -13,18 +13,32 @@ use std::sync::Arc;
 use rayon::ThreadPool;
 
 thread_local! {
+    /// Pool identities currently guarded by batch execution on this thread.
     static ACTIVE_POOLS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Marks a Rayon pool as active on the current thread for one call.
 pub(crate) struct ActiveBatchGuard {
+    /// Identity of the Rayon pool registered by this guard.
     pool_id: usize,
     /// Makes the guard thread-bound so it cannot be moved into a worker.
     thread_bound: PhantomData<Rc<()>>,
 }
 
 impl ActiveBatchGuard {
-    /// Enters `pool` on the current thread, returning `None` on reentry.
+    /// Registers `pool` as active on the current thread.
+    ///
+    /// Returns `None` when the same pool is already active, which lets callers
+    /// avoid recursively entering the Rayon scheduler.
+    ///
+    /// # Parameters
+    ///
+    /// * `pool` - Rayon pool whose identity is registered for this thread.
+    ///
+    /// # Returns
+    ///
+    /// A guard that removes the registration when dropped, or `None` on
+    /// reentry.
     pub(crate) fn enter(pool: &Arc<ThreadPool>) -> Option<Self> {
         let pool_id = Arc::as_ptr(pool) as usize;
         ACTIVE_POOLS.with(|active| {

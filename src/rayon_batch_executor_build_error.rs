@@ -9,6 +9,16 @@ use thiserror::Error;
 
 /// Error returned when [`crate::RayonBatchExecutorBuilder`] cannot build an
 /// executor.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_rayon_batch::RayonBatchExecutorBuildError;
+///
+/// let error = RayonBatchExecutorBuildError::ZeroThreadCount;
+/// assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
+/// ```
+#[must_use]
 #[derive(Debug, Error)]
 pub enum RayonBatchExecutorBuildError {
     /// The configured Rayon thread count is zero.
