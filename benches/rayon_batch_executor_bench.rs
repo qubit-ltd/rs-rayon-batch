@@ -10,10 +10,12 @@
 use std::hint::black_box;
 use std::thread;
 
+use criterion::BenchmarkGroup;
 use criterion::BenchmarkId;
 use criterion::Criterion;
 use criterion::criterion_group;
 use criterion::criterion_main;
+use criterion::measurement::WallTime;
 use qubit_batch::BatchExecutor;
 use qubit_batch::ParallelBatchExecutor;
 use qubit_batch::SequentialBatchExecutor;
@@ -208,7 +210,7 @@ fn benchmark_rayon_clone_concurrent(criterion: &mut Criterion) {
 /// * `executor` - Executor implementation under measurement.
 /// * `task_count` - Number of tasks in each measured batch.
 fn benchmark_no_op_case<E>(
-    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    group: &mut BenchmarkGroup<'_, WallTime>,
     executor_name: &str,
     executor: &E,
     task_count: usize,
@@ -238,12 +240,8 @@ fn benchmark_no_op_case<E>(
 /// * `executor_name` - Stable name displayed by Criterion.
 /// * `executor` - Executor implementation under measurement.
 /// * `task_count` - Number of tasks in each measured batch.
-fn benchmark_cpu_case<E>(
-    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
-    executor_name: &str,
-    executor: &E,
-    task_count: usize,
-) where
+fn benchmark_cpu_case<E>(group: &mut BenchmarkGroup<'_, WallTime>, executor_name: &str, executor: &E, task_count: usize)
+where
     E: BatchExecutor,
 {
     group.bench_with_input(
