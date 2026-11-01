@@ -36,6 +36,7 @@ use qubit_rayon_batch::RayonBatchExecutor;
 const CONCURRENT_CALLS_CHILD: &str = "QUBIT_BATCH_RAYON_CONCURRENT_CALLS_TEST_CHILD";
 const ADMISSION_WINDOW_CHILD: &str = "QUBIT_BATCH_RAYON_ADMISSION_WINDOW_TEST_CHILD";
 const REPORTER_FAILURE_CHILD: &str = "QUBIT_BATCH_RAYON_REPORTER_FAILURE_TEST_CHILD";
+const PAUSED_SOURCE_CHILD: &str = "QUBIT_BATCH_RAYON_PAUSED_SOURCE_TEST_CHILD";
 const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(10);
 const COORDINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -504,4 +505,116 @@ fn test_running_reporter_failure_drains_accepted_tasks() {
     assert_eq!(completed.load(Ordering::Acquire), completed_count);
     assert!(stopped_after_observations >= completed_count);
     assert!(stopped_after_observations <= completed_count + 1);
+}
+
+#[test]
+fn test_paused_source_releases_shared_pool_after_resume() {
+    if std::env::var_os(PAUSED_SOURCE_CHILD).is_none() {
+        run_with_watchdog(
+            "test_paused_source_releases_shared_pool_after_resume",
+            PAUSED_SOURCE_CHILD,
+        );
+        return;
+    }
+
+    for shared_pool in [true, false] {
+        let first_executor = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .sequential_threshold(0)
+            .build()
+            .expect("first pool should build");
+        let second_executor = if shared_pool {
+            first_executor.clone()
+        } else {
+            RayonBatchExecutor::builder()
+                .thread_count(2)
+                .sequential_threshold(0)
+                .build()
+                .expect("independent pool should build")
+        };
+        let rendezvous = Arc::new(Barrier::new(2));
+        let (ready_sender, ready_receiver) = mpsc::channel();
+        let (paused_sender, paused_receiver) = mpsc::channel();
+        let (resume_sender, resume_receiver) = mpsc::channel();
+        let (entered_sender, entered_receiver) = mpsc::channel();
+        let (started_sender, started_receiver) = mpsc::channel();
+
+        let first = thread::spawn(move || {
+            let tasks = (0..2).map(move |_| {
+                let rendezvous = Arc::clone(&rendezvous);
+                let ready_sender = ready_sender.clone();
+                move || {
+                    rendezvous.wait();
+                    ready_sender.send(()).expect("task readiness is observed");
+                    Ok::<(), ()>(())
+                }
+            });
+            let exhaustion = std::iter::from_fn(move || {
+                paused_sender.send(()).expect("source pause is observed");
+                resume_receiver
+                    .recv_timeout(WATCHDOG_TIMEOUT)
+                    .expect("parent must resume the finite source");
+                None
+            });
+            first_executor.execute_with_count(tasks.chain(exhaustion), 2)
+        });
+        paused_receiver
+            .recv_timeout(COORDINATION_TIMEOUT)
+            .expect("source should reach exhaustion probe");
+        for _ in 0..2 {
+            ready_receiver
+                .recv_timeout(COORDINATION_TIMEOUT)
+                .expect("both first-batch tasks must run");
+        }
+
+        let second = thread::spawn(move || {
+            let source = (0..2).inspect(move |index| {
+                if *index == 0 {
+                    entered_sender.send(()).expect("second source is observed");
+                }
+            });
+            second_executor.for_each(source, move |_| {
+                started_sender
+                    .send(())
+                    .expect("second task start is observed");
+                Ok::<(), ()>(())
+            })
+        });
+        entered_receiver
+            .recv_timeout(COORDINATION_TIMEOUT)
+            .expect("second producer should begin consuming");
+        let observation_window = if shared_pool {
+            Duration::from_millis(250)
+        } else {
+            COORDINATION_TIMEOUT
+        };
+        let observation = started_receiver.recv_timeout(observation_window);
+        resume_sender
+            .send(())
+            .expect("first source should still be waiting");
+        let first_outcome = first
+            .join()
+            .expect("first producer should not panic")
+            .expect("first batch should complete");
+        let second_outcome = second
+            .join()
+            .expect("second producer should not panic")
+            .expect("second batch should complete");
+        assert!(first_outcome.is_success());
+        assert!(second_outcome.is_success());
+        assert_eq!(first_outcome.completed_count(), 2);
+        assert_eq!(second_outcome.completed_count(), 2);
+        if shared_pool {
+            assert!(!matches!(
+                observation,
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            ));
+            eprintln!("shared pool task-start observation: {observation:?}");
+        } else {
+            assert!(
+                observation.is_ok(),
+                "independent pool must make progress during pause"
+            );
+        }
+    }
 }
