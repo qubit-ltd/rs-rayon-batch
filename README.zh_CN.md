@@ -33,7 +33,8 @@ Qubit Rayon Batch 为 `qubit-batch` API 提供面向 CPU 密集型任务的 Rayo
 ## 特性
 
 - 使用专用 Rayon 线程池执行面向 CPU 的批量任务。
-- 将小批量任务和同池嵌套批次交给 `qubit-batch` 的顺序执行器。
+- 将小批量任务和同池嵌套批次交给 `qubit-batch` 的顺序执行器，并保留所配置的
+  任务失败策略；默认策略会收集全部任务失败。
 - 即使任务乱序完成，也能用稳定任务索引记录失败项。
 - 将任务 panic 捕获为批量失败。同步进度回调的 panic 会传播；自动 running
   reporter 的 panic 会转换为结构化的进度错误。

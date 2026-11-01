@@ -38,8 +38,8 @@ Import core batch and progress types directly from `qubit-batch` and
 
 - Run CPU-oriented batch work on a dedicated Rayon pool.
 - Delegate small batches and same-pool nested batches to `qubit-batch`'s
-  sequential executor while preserving the parallel executor's collect-all
-  task-failure behavior.
+  sequential executor while preserving the configured task-failure policy;
+  the default policy collects all task failures.
 - Keep stable task indexes for failures even when work finishes out of order.
 - Capture task panics as batch failures. Synchronous progress-reporter panics
   propagate; panics from the automatic running reporter become a structured
