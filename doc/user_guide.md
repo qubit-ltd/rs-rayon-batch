@@ -119,8 +119,7 @@ synchronous call contract and avoids nested pool deadlock. It does not merge
 the nested call's outcome into the outer outcome: the task must inspect or
 translate that result according to the application's error model.
 
-For example, an outer task can make a small nested call and translate its
-batch-level error into the outer task's error type:
+The following example checks both result layers: a batch-level error is translated first, and an unsuccessful inner outcome becomes an outer task error. It exercises both successful and failing inner tasks.
 
 ```rust
 use qubit_batch::BatchExecutor;
@@ -131,21 +130,43 @@ let executor = RayonBatchExecutor::builder()
     .sequential_threshold(0)
     .build()
     .expect("rayon batch executor should build");
-let nested_executor = executor.clone();
-let outcome = executor
-    .execute_with_count(
-        std::iter::once(move || {
-            nested_executor
-                .execute_with_count([|| Ok::<(), &'static str>(())], 1)
-                .map(|_| ())
-                .map_err(|_| "nested batch failed")
-        }),
-        1,
-    )
-    .expect("outer batch should succeed");
-
-assert!(outcome.is_success());
+for fail_inner in [false, true] {
+    let nested_executor = executor.clone();
+    let outcome = executor
+        .execute_with_count(
+            std::iter::once(move || {
+                let nested_outcome = nested_executor
+                    .execute_with_count(
+                        [move || {
+                            if fail_inner {
+                                Err::<(), &'static str>("invalid nested record")
+                            } else {
+                                Ok(())
+                            }
+                        }],
+                        1,
+                    )
+                    .map_err(|_| "nested batch failed")?;
+                if nested_outcome.is_success() {
+                    Ok(())
+                } else {
+                    Err("nested task failed")
+                }
+            }),
+            1,
+        )
+        .expect("outer batch should return an outcome");
+    assert_eq!(outcome.completed_count(), 1);
+    assert_eq!(outcome.is_success(), !fail_inner);
+    assert_eq!(outcome.failed_count(), usize::from(fail_inner));
+    assert_eq!(outcome.panicked_count(), 0);
+    if fail_inner {
+        assert_eq!(outcome.failures()[0].index(), 0);
+    }
+}
 ```
+
+An Ok batch result does not imply that its tasks succeeded. This example maps inner failures to one outer task error; it does not merge inner failure indexes. Preserve or translate the inner outcome if the application needs those details.
 
 Calls made from ordinary external threads can use executor clones
 concurrently. Their sources, outcomes, and callable values remain independent.

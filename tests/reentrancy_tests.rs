@@ -355,3 +355,46 @@ fn test_source_producer_can_use_a_different_pool_in_parallel() {
     assert!(outcome.is_success());
     assert_eq!(outcome.completed_count(), 2);
 }
+
+#[test]
+fn test_nested_task_failure_is_mapped_to_outer_failure() {
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("nested example executor should build");
+    for fail_inner in [false, true] {
+        let nested_executor = executor.clone();
+        let outcome = executor
+            .execute_with_count(
+                std::iter::once(move || {
+                    let nested_outcome = nested_executor
+                        .execute_with_count(
+                            [move || {
+                                if fail_inner {
+                                    Err::<(), &'static str>("invalid nested record")
+                                } else {
+                                    Ok(())
+                                }
+                            }],
+                            1,
+                        )
+                        .map_err(|_| "nested batch failed")?;
+                    if nested_outcome.is_success() {
+                        Ok(())
+                    } else {
+                        Err("nested task failed")
+                    }
+                }),
+                1,
+            )
+            .expect("outer batch should return an outcome");
+        assert_eq!(outcome.completed_count(), 1);
+        assert_eq!(outcome.is_success(), !fail_inner);
+        assert_eq!(outcome.failed_count(), usize::from(fail_inner));
+        assert_eq!(outcome.panicked_count(), 0);
+        if fail_inner {
+            assert_eq!(outcome.failures()[0].index(), 0);
+        }
+    }
+}

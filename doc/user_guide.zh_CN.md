@@ -103,7 +103,7 @@ worker 共享一个可变 callable。
 同步调用契约，并避免嵌套线程池死锁。嵌套调用的结果不会自动合并到外层结果；任务应按应用
 的错误模型检查或转换这个结果。
 
-例如，外层任务可以执行一个小的嵌套批次，并把批次级错误转换成外层任务的错误类型：
+下面的示例先转换内层批次级错误，再检查内层 outcome；内层任务失败时，显式返回外层任务错误。示例同时运行内层成功和失败两个分支。
 
 ```rust
 use qubit_batch::BatchExecutor;
@@ -114,21 +114,43 @@ let executor = RayonBatchExecutor::builder()
     .sequential_threshold(0)
     .build()
     .expect("rayon batch executor should build");
-let nested_executor = executor.clone();
-let outcome = executor
-    .execute_with_count(
-        std::iter::once(move || {
-            nested_executor
-                .execute_with_count([|| Ok::<(), &'static str>(())], 1)
-                .map(|_| ())
-                .map_err(|_| "nested batch failed")
-        }),
-        1,
-    )
-    .expect("outer batch should succeed");
-
-assert!(outcome.is_success());
+for fail_inner in [false, true] {
+    let nested_executor = executor.clone();
+    let outcome = executor
+        .execute_with_count(
+            std::iter::once(move || {
+                let nested_outcome = nested_executor
+                    .execute_with_count(
+                        [move || {
+                            if fail_inner {
+                                Err::<(), &'static str>("invalid nested record")
+                            } else {
+                                Ok(())
+                            }
+                        }],
+                        1,
+                    )
+                    .map_err(|_| "nested batch failed")?;
+                if nested_outcome.is_success() {
+                    Ok(())
+                } else {
+                    Err("nested task failed")
+                }
+            }),
+            1,
+        )
+        .expect("outer batch should return an outcome");
+    assert_eq!(outcome.completed_count(), 1);
+    assert_eq!(outcome.is_success(), !fail_inner);
+    assert_eq!(outcome.failed_count(), usize::from(fail_inner));
+    assert_eq!(outcome.panicked_count(), 0);
+    if fail_inner {
+        assert_eq!(outcome.failures()[0].index(), 0);
+    }
+}
 ```
+
+批次返回 Ok 不代表任务全部成功。该示例把内层失败归并为一个外层任务错误，不会合并内层失败下标；应用需要明细时，应自行保留或转换内层 outcome。
 
 来自普通外部线程的调用可以并发使用执行器 clone。各次调用的输入来源、结果和 callable
 值彼此独立。
