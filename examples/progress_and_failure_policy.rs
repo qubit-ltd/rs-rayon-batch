@@ -64,14 +64,18 @@ fn main() {
             .task_failure_policy(policy)
             .build()
             .expect("example executor should build");
-        let calls = (0..64usize).map(|index| move || {
-            if index % 4 == 0 {
-                Err("invalid record")
-            } else {
-                Ok(index * 2)
+        let calls = (0..64usize).map(|index| {
+            move || {
+                if index % 4 == 0 {
+                    Err("invalid record")
+                } else {
+                    Ok(index * 2)
+                }
             }
         });
-        let result = executor.call(calls).expect("count and reporting should succeed");
+        let result = executor
+            .call(calls)
+            .expect("count and reporting should succeed");
         let outcome = result.outcome();
         assert!(!outcome.is_success());
         assert_eq!(result.outputs().len(), outcome.succeeded_count());
@@ -92,10 +96,17 @@ fn main() {
             }
             _ => panic!("example only selects the three documented policies"),
         }
-        println!("policy={policy:?}, termination={:?}, completed={}, failures={}",
-            outcome.termination(), outcome.completed_count(), outcome.failure_count());
+        println!(
+            "policy={policy:?}, termination={:?}, completed={}, failures={}",
+            outcome.termination(),
+            outcome.completed_count(),
+            outcome.failure_count()
+        );
     }
     assert_eq!(reporter.started.load(Ordering::Relaxed), 3);
     assert_eq!(reporter.terminal.load(Ordering::Relaxed), 3);
-    println!("running events={}", reporter.running.load(Ordering::Relaxed));
+    println!(
+        "running events={}",
+        reporter.running.load(Ordering::Relaxed)
+    );
 }
