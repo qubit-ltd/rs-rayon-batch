@@ -25,6 +25,7 @@ use qubit_rayon_batch::RayonBatchExecutor;
 
 const SAME_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_SAME_POOL_TEST_CHILD";
 const DIFFERENT_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_DIFFERENT_POOL_TEST_CHILD";
+const DIFFERENT_POOL_SOURCE_CHILD: &str = "QUBIT_BATCH_DIFFERENT_POOL_SOURCE_CHILD";
 const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Runs one test in an independently terminable subprocess.
@@ -312,6 +313,14 @@ fn test_source_panic_does_not_leak_active_guard() {
 
 #[test]
 fn test_source_producer_can_use_a_different_pool_in_parallel() {
+    if std::env::var_os(DIFFERENT_POOL_SOURCE_CHILD).is_none() {
+        run_with_watchdog(
+            "test_source_producer_can_use_a_different_pool_in_parallel",
+            DIFFERENT_POOL_SOURCE_CHILD,
+        );
+        return;
+    }
+
     let outer = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(0)
@@ -322,26 +331,21 @@ fn test_source_producer_can_use_a_different_pool_in_parallel() {
         .sequential_threshold(0)
         .build()
         .expect("inner executor should build");
-    let producer = thread::current().id();
     let tasks = (0..2).map(|_| {
-        let inner = inner.clone();
-        move || {
-            assert!(
-                inner
-                    .for_each(0..2, |_| {
-                        assert_ne!(thread::current().id(), producer);
-                        Ok::<(), ()>(())
-                    })
-                    .expect("different pool nested execution should return")
-                    .is_success()
-            );
-            Ok::<(), ()>(())
-        }
+        let producer = thread::current().id();
+        let rendezvous = Barrier::new(2);
+        let nested = inner
+            .for_each(0..2, |_| {
+                assert_ne!(thread::current().id(), producer);
+                rendezvous.wait();
+                Ok::<(), ()>(())
+            })
+            .expect("different pool source execution should return");
+        assert!(nested.is_success());
+        assert_eq!(nested.completed_count(), 2);
+        || Ok::<(), ()>(())
     });
-    assert!(
-        outer
-            .execute(tasks)
-            .expect("outer execution should return")
-            .is_success()
-    );
+    let outcome = outer.execute(tasks).expect("outer execution should return");
+    assert!(outcome.is_success());
+    assert_eq!(outcome.completed_count(), 2);
 }

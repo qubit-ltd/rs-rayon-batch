@@ -11,6 +11,9 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::panic::panic_any;
 use std::sync::Arc;
+use std::sync::Condvar;
+use std::sync::Mutex;
+use std::sync::PoisonError;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -22,6 +25,8 @@ use qubit_progress::AutoReporterError;
 use qubit_progress::Event;
 use qubit_progress::MetricSnapshot;
 use qubit_progress::Phase;
+use qubit_progress::Reporter;
+use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor;
 use qubit_rayon_batch::RayonBatchExecutorBuildError;
 
@@ -70,6 +75,57 @@ fn task_counter(event: &Event) -> &MetricSnapshot {
             "progress event should contain exactly one task counter, got {}",
             counters.len()
         ),
+    }
+}
+
+/// Coordinates task completion with a progress callback.
+#[derive(Default)]
+struct ProgressTestGate {
+    released: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl ProgressTestGate {
+    /// Waits until the reporter releases the gate, failing with a bounded
+    /// timeout otherwise.
+    fn wait(&self) {
+        let released = self.released.lock().unwrap_or_else(PoisonError::into_inner);
+        let (released, _) = self
+            .changed
+            .wait_timeout_while(released, Duration::from_secs(5), |released| !*released)
+            .unwrap_or_else(PoisonError::into_inner);
+        assert!(*released, "progress reporter did not release task gate before timeout");
+    }
+
+    /// Releases all tasks waiting for a qualifying progress event.
+    fn release(&self) {
+        *self.released.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.changed.notify_all();
+    }
+}
+
+/// Records events and releases gated tasks when a qualifying running snapshot
+/// arrives.
+struct CoordinatedProgressReporter {
+    gate: Arc<ProgressTestGate>,
+    recording: Arc<RecordingProgressReporter>,
+    require_completion: bool,
+    panic_message: Option<&'static str>,
+}
+
+impl Reporter for CoordinatedProgressReporter {
+    fn report(&self, event: &Event) -> Result<(), ReporterError> {
+        self.recording.report(event)?;
+        if event.phase() == Phase::Running {
+            let counter = task_counter(event);
+            if counter.active() > 0 && (!self.require_completion || counter.completed() > 0) {
+                self.gate.release();
+                if let Some(message) = self.panic_message {
+                    panic_any(message);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -506,26 +562,39 @@ fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
 
 #[test]
 fn test_rayon_batch_executor_reports_progress() {
-    let reporter = Arc::new(RecordingProgressReporter::new());
+    let gate = Arc::new(ProgressTestGate::default());
+    let recording = Arc::new(RecordingProgressReporter::new());
+    let reporter = CoordinatedProgressReporter {
+        gate: Arc::clone(&gate),
+        recording: Arc::clone(&recording),
+        require_completion: true,
+        panic_message: None,
+    };
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::from_millis(10))
-        .reporter_arc(reporter.clone())
+        .reporter(reporter)
         .build()
         .expect("rayon batch executor should build");
-    let tasks = vec![
-        TestTask::fail("fast failure"),
-        TestTask::sleep_success(Duration::from_millis(60)),
-        TestTask::succeed(),
-        TestTask::sleep_success(Duration::from_millis(60)),
-    ];
+    let tasks = (0..4).map(|index| {
+        let gate = Arc::clone(&gate);
+        move || {
+            if index == 0 {
+                Err("fast failure")
+            } else {
+                gate.wait();
+                Ok(())
+            }
+        }
+    });
 
     let result = executor.execute_with_count(tasks, 4).expect("batch should succeed");
-    let events = reporter.events();
+    let events = recording.events();
 
     assert_eq!(result.completed_count(), 4);
     assert_eq!(result.failed_count(), 1);
+    assert_eq!(result.panicked_count(), 0);
     assert!(matches!(events.first(), Some(event)
         if event.phase() == Phase::Started
             && task_counter(event).total() == Some(4)
@@ -663,19 +732,28 @@ fn test_rayon_batch_executor_preserves_progress_reporter_zero_interval_process_p
 #[test]
 fn test_rayon_batch_executor_preserves_progress_reporter_process_panic() {
     const PANIC_MESSAGE: &str = "progress reporter process panic";
+    let gate = Arc::new(ProgressTestGate::default());
+    let recording = Arc::new(RecordingProgressReporter::new());
+    let reporter = CoordinatedProgressReporter {
+        gate: Arc::clone(&gate),
+        recording,
+        require_completion: false,
+        panic_message: Some(PANIC_MESSAGE),
+    };
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(1)
         .report_interval(Duration::from_millis(1))
-        .reporter(PanickingProgressReporter::new(
-            ProgressPanicPhase::Process,
-            PANIC_MESSAGE,
-        ))
+        .reporter(reporter)
         .build()
         .expect("rayon batch executor should build");
-    let tasks = (0..2)
-        .map(|_| TestTask::sleep_success(Duration::from_millis(50)))
-        .collect::<Vec<_>>();
+    let tasks = (0..2).map(|_| {
+        let gate = Arc::clone(&gate);
+        move || {
+            gate.wait();
+            Ok::<(), &'static str>(())
+        }
+    });
 
     let error = executor
         .execute_with_count(tasks, 2)
