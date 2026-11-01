@@ -79,8 +79,9 @@ assert_eq!(result.outputs().len(), 7);
 ## 核心工作流
 
 针对一类工作负载创建一个执行器，然后复用它处理不同大小的有限批次。应通过实际负载
-测量选择 `thread_count` 与 `sequential_threshold`。阈值为 0 表示对每个尚未运行在同一线程池
-中的非空批次请求 Rayon worker。
+测量选择 `thread_count` 与 `sequential_threshold`。阈值为 0 只关闭非空批次按大小触发的
+顺序回退；单 worker、同池 worker 调用和惰性来源生产线程在同池重入时，仍会在当前调用线程
+顺序执行。
 
 `execute` 与 `execute_with_count` 接收 `Runnable` 任务。`call` 与 `call_with_count` 接收
 `Callable`，并收集成功返回值。Exact-size 版本从迭代器推导声明数量；如果数量来自数据库

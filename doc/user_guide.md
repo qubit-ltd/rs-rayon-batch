@@ -88,8 +88,10 @@ batch-level error with the partial result attached.
 
 Build one executor for the workload, then reuse it for calls of different
 finite sizes. Choose `thread_count` and `sequential_threshold` from measured
-workloads. A threshold of zero asks for Rayon workers for every non-empty batch
-that is not already running in the same pool.
+workloads. A threshold of zero disables the batch-size fallback for non-empty
+batches. Calls still run sequentially on the calling thread when the executor
+has one worker, when called from its own Rayon pool, or when a lazy-source
+producer reenters the same pool.
 
 `execute` and `execute_with_count` accept `Runnable` tasks. `call` and
 `call_with_count` adapt `Callable` tasks and collect successful values. The

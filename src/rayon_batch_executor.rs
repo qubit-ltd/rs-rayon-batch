@@ -33,7 +33,14 @@ use crate::active_batch_guard::ActiveBatchGuard;
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
 /// The executor runs small batches sequentially when the declared batch size is
-/// at or below the configured sequential threshold.
+/// at or below the configured sequential threshold. It also runs calls
+/// sequentially on the calling thread when configured with one worker, when a
+/// call is made from one of its own Rayon workers, or when a lazy-source
+/// producer reenters the same pool. A threshold of zero disables only the
+/// batch-size fallback for non-empty batches. Clones share the same Rayon pool
+/// and executor configuration.
+///
+/// # Examples
 ///
 /// ```rust
 /// use qubit_batch::BatchExecutor;
