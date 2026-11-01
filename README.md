@@ -49,9 +49,10 @@ Import core batch and progress types directly from `qubit-batch` and
 `BatchExecutor::call` runs each `Callable` through its `&mut self` call
 operation (the callable equivalent of `FnMut`). Rayon calls still require the
 callable, result, and error types to be `Send`; the `for_each` trait methods
-retain their `Fn + Send + Sync` action bound. A successful input count measures
-items accepted by the batch API. Domain measurements such as affected database
-rows belong in the application result, not in that input count.
+retain their `Fn + Send + Sync` action bound. `BatchOutcome::succeeded_count()`
+counts input tasks that completed successfully. Accepted tasks can still fail
+or panic. Domain measurements such as affected database rows belong in the
+application result, not in that successful input count.
 
 Callable results retain successful values and failure details, so their result
 storage is O(S + F) for S successes and F failures, plus the sizes of the
