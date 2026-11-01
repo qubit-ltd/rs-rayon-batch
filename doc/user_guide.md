@@ -115,19 +115,54 @@ The default reporter is `NoopReporter`. To observe lifecycle events, implement
 `report_interval` to throttle running updates:
 
 ```rust
-let executor = RayonBatchExecutor::builder()
-    .reporter_arc(reporter.clone())
-    .report_interval(Duration::from_millis(10))
-    .build()?;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+use qubit_batch::BatchExecutor;
+use qubit_progress::{Event, Phase, Reporter, ReporterError};
+use qubit_rayon_batch::RayonBatchExecutor;
+
+#[derive(Default)]
+struct CountingReporter(AtomicUsize);
+
+impl Reporter for CountingReporter {
+    fn report(&self, event: &Event) -> Result<(), ReporterError> {
+        if matches!(event.phase(), Phase::Started | Phase::Succeeded | Phase::Failed) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+}
+
+fn main() {
+    let reporter = Arc::new(CountingReporter::default());
+    let executor = RayonBatchExecutor::builder()
+        .reporter_arc(reporter.clone())
+        .report_interval(Duration::from_millis(10))
+        .build()
+        .expect("executor should build");
+
+    let success = executor.call([|| Ok::<usize, &'static str>(2)])
+        .expect("batch should be counted");
+    assert!(success.outcome().is_success());
+    assert_eq!(*success.outputs()[0].value(), 2);
+
+    let failure = executor.call((0..4).map(|index| move || {
+        if index == 3 { Err("invalid record") } else { Ok(index * 2) }
+    })).expect("task failure is part of the outcome");
+    assert!(!failure.outcome().is_success());
+    assert_eq!(failure.outcome().failed_count(), 1);
+    assert_eq!(failure.outputs().len(), failure.outcome().succeeded_count());
+    assert!(reporter.0.load(Ordering::Relaxed) >= 4);
+}
 ```
 
 `Started` and a terminal `Succeeded` or `Failed` event describe the batch.
 `Running` is optional and may occur zero times, especially for a short batch.
 Clones share the reporter, so callbacks from concurrent batches may interleave.
 Events do not provide application-level batch correlation; the application
-owns correlation, metric storage, logging, and retry decisions. The runnable
-example below counts lifecycle events only. Production applications can
-connect their own metrics and logs. A callback should not wait for work that
+owns correlation, metric storage, logging, and retry decisions. The reporter
+above is an introductory counter, not production monitoring. A callback should not wait for work that
 needs the same pool: shared workers can remain occupied while a source blocks,
 so timely progress for another batch is not guaranteed.
 
@@ -141,21 +176,56 @@ before return, and the final failure count can exceed the threshold. Always
 inspect the outcome even when `call` returns `Ok`:
 
 ```rust
-let executor = RayonBatchExecutor::builder()
-    .task_failure_policy(TaskFailurePolicy::StopAfterFailures(
-        NonZeroUsize::new(2).expect("positive limit"),
-    ))
-    .build()?;
-let result = executor.call(calls)?;
-let outcome = result.outcome();
-assert!(!outcome.is_success());
-assert_eq!(result.outputs().len(), outcome.succeeded_count());
+use std::num::NonZeroUsize;
+use qubit_batch::{BatchExecutor, BatchTermination, TaskFailurePolicy};
+use qubit_rayon_batch::RayonBatchExecutor;
+
+fn main() {
+    let limit = NonZeroUsize::new(2).expect("positive limit");
+    for policy in [
+        TaskFailurePolicy::Continue,
+        TaskFailurePolicy::StopOnFirstFailure,
+        TaskFailurePolicy::StopAfterFailures(limit),
+    ] {
+        let executor = RayonBatchExecutor::builder()
+            .task_failure_policy(policy)
+            .build()
+            .expect("executor should build");
+        let calls = (0..16usize).map(|index| move || {
+            if index % 4 == 0 { Err("invalid record") } else { Ok(index * 2) }
+        });
+        let result = executor.call(calls).expect("task errors are in the outcome");
+        let outcome = result.outcome();
+        assert!(!outcome.is_success());
+        assert_eq!(result.outputs().len(), outcome.succeeded_count());
+        match policy {
+            TaskFailurePolicy::Continue => {
+                assert_eq!(outcome.termination(), BatchTermination::Finished);
+                assert_eq!(outcome.failed_count(), 4);
+            }
+            TaskFailurePolicy::StopOnFirstFailure => assert!(outcome.failure_count() >= 1),
+            TaskFailurePolicy::StopAfterFailures(limit) => {
+                assert!(outcome.failure_count() >= limit.get());
+            }
+            _ => unreachable!(),
+        }
+        for output in result.outputs() {
+            assert_eq!(*output.value(), output.index() * 2);
+        }
+    }
+}
 ```
 
 The [progress and failure policy example](../examples/progress_and_failure_policy.rs)
 shows all three policies and validates retained output indexes and values. A
 batch-level error may also carry a partial outcome and outputs; do not treat
 them as a completed successful batch.
+
+Run the example with:
+
+```bash
+cargo run --locked --example progress_and_failure_policy
+```
 
 ## Advanced Usage
 

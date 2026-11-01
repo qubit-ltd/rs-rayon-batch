@@ -101,16 +101,52 @@ worker 共享一个可变 callable。
 `report_interval` 限制 running 更新频率：
 
 ```rust
-let executor = RayonBatchExecutor::builder()
-    .reporter_arc(reporter.clone())
-    .report_interval(Duration::from_millis(10))
-    .build()?;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+use qubit_batch::BatchExecutor;
+use qubit_progress::{Event, Phase, Reporter, ReporterError};
+use qubit_rayon_batch::RayonBatchExecutor;
+
+#[derive(Default)]
+struct CountingReporter(AtomicUsize);
+
+impl Reporter for CountingReporter {
+    fn report(&self, event: &Event) -> Result<(), ReporterError> {
+        if matches!(event.phase(), Phase::Started | Phase::Succeeded | Phase::Failed) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+}
+
+fn main() {
+    let reporter = Arc::new(CountingReporter::default());
+    let executor = RayonBatchExecutor::builder()
+        .reporter_arc(reporter.clone())
+        .report_interval(Duration::from_millis(10))
+        .build()
+        .expect("executor should build");
+
+    let success = executor.call([|| Ok::<usize, &'static str>(2)])
+        .expect("batch should be counted");
+    assert!(success.outcome().is_success());
+    assert_eq!(*success.outputs()[0].value(), 2);
+
+    let failure = executor.call((0..4).map(|index| move || {
+        if index == 3 { Err("invalid record") } else { Ok(index * 2) }
+    })).expect("task failure is part of the outcome");
+    assert!(!failure.outcome().is_success());
+    assert_eq!(failure.outcome().failed_count(), 1);
+    assert_eq!(failure.outputs().len(), failure.outcome().succeeded_count());
+    assert!(reporter.0.load(Ordering::Relaxed) >= 4);
+}
 ```
 
 `Started` 和终态 `Succeeded` 或 `Failed` 描述批次。`Running` 是可选更新，可能一次也不产生，
 尤其是短批次。执行器 clone 共享 reporter，因此并发批次的回调事件可能交错；事件不提供应用级
-批次关联。应用负责关联、指标存储、日志和重试决策。下面的可运行示例只统计生命周期事件；生产
-应用应接入自己的指标和日志。回调不应等待依赖同一线程池的工作：来源阻塞时，同池 worker
+批次关联。应用负责关联、指标存储、日志和重试决策。上面的计数 reporter 仅用于入门演示，不能
+替代生产监控。回调不应等待依赖同一线程池的工作：来源阻塞时，同池 worker
 可能持续被占用，无法保证其他批次及时获得进展。
 
 ### 选择任务失败策略
@@ -121,19 +157,54 @@ panic 都计为失败。这些策略是协作式的：返回前会排空已接�
 即使 `call` 返回 `Ok`，也要检查 outcome：
 
 ```rust
-let executor = RayonBatchExecutor::builder()
-    .task_failure_policy(TaskFailurePolicy::StopAfterFailures(
-        NonZeroUsize::new(2).expect("positive limit"),
-    ))
-    .build()?;
-let result = executor.call(calls)?;
-let outcome = result.outcome();
-assert!(!outcome.is_success());
-assert_eq!(result.outputs().len(), outcome.succeeded_count());
+use std::num::NonZeroUsize;
+use qubit_batch::{BatchExecutor, BatchTermination, TaskFailurePolicy};
+use qubit_rayon_batch::RayonBatchExecutor;
+
+fn main() {
+    let limit = NonZeroUsize::new(2).expect("positive limit");
+    for policy in [
+        TaskFailurePolicy::Continue,
+        TaskFailurePolicy::StopOnFirstFailure,
+        TaskFailurePolicy::StopAfterFailures(limit),
+    ] {
+        let executor = RayonBatchExecutor::builder()
+            .task_failure_policy(policy)
+            .build()
+            .expect("executor should build");
+        let calls = (0..16usize).map(|index| move || {
+            if index % 4 == 0 { Err("invalid record") } else { Ok(index * 2) }
+        });
+        let result = executor.call(calls).expect("task errors are in the outcome");
+        let outcome = result.outcome();
+        assert!(!outcome.is_success());
+        assert_eq!(result.outputs().len(), outcome.succeeded_count());
+        match policy {
+            TaskFailurePolicy::Continue => {
+                assert_eq!(outcome.termination(), BatchTermination::Finished);
+                assert_eq!(outcome.failed_count(), 4);
+            }
+            TaskFailurePolicy::StopOnFirstFailure => assert!(outcome.failure_count() >= 1),
+            TaskFailurePolicy::StopAfterFailures(limit) => {
+                assert!(outcome.failure_count() >= limit.get());
+            }
+            _ => unreachable!(),
+        }
+        for output in result.outputs() {
+            assert_eq!(*output.value(), output.index() * 2);
+        }
+    }
+}
 ```
 
 [进度与失败策略可运行示例](../examples/progress_and_failure_policy.rs)展示三种策略，并检查保留的
 输出下标和值。批次级错误也可能附带部分 outcome 和输出；不要将它们视为成功完成的批次。
+
+运行该示例：
+
+```bash
+cargo run --locked --example progress_and_failure_policy
+```
 
 ## 进阶用法
 
