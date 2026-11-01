@@ -26,6 +26,7 @@ use std::time::Instant;
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
 use qubit_batch::ProgressFailure;
+use qubit_function::Runnable;
 use qubit_progress::AutoReporterError;
 use qubit_progress::Event;
 use qubit_progress::MetricSnapshot;
@@ -772,6 +773,62 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
         .expect("executor should remain usable");
     assert!(outcome.is_success());
     assert_eq!(outcome.completed_count(), 2);
+}
+
+#[test]
+fn test_runnable_drop_panic_propagates_without_poisoning_executor() {
+    const MARKER: &str = "QUBIT_RAYON_RUNNABLE_DROP_PANIC_CHILD";
+    if std::env::var_os(MARKER).is_none() {
+        run_panic_test_with_watchdog(
+            "executor::rayon_batch_executor_tests::test_runnable_drop_panic_propagates_without_poisoning_executor",
+            MARKER,
+        );
+        return;
+    }
+
+    struct DropPanicRunnable {
+        ran: Arc<AtomicUsize>,
+    }
+
+    impl Runnable<&'static str> for DropPanicRunnable {
+        fn run(&mut self) -> Result<(), &'static str> {
+            self.ran.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    impl Drop for DropPanicRunnable {
+        fn drop(&mut self) {
+            panic!("runnable drop panic");
+        }
+    }
+
+    for (workers, threshold) in [(2, 0), (2, 100), (1, 0)] {
+        let executor = RayonBatchExecutor::builder()
+            .thread_count(workers)
+            .sequential_threshold(threshold)
+            .build()
+            .expect("valid executor");
+        let ran = Arc::new(AtomicUsize::new(0));
+        let payload = catch_unwind(AssertUnwindSafe(|| {
+            executor.execute_with_count([DropPanicRunnable { ran: Arc::clone(&ran) }], 1)
+        }))
+        .expect_err("Runnable destruction must unwind to the caller");
+        assert_eq!(payload.downcast_ref::<&str>(), Some(&"runnable drop panic"));
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+
+        let caller = thread::current().id();
+        let recovered = executor
+            .for_each(0..101, |_| {
+                if workers > 1 {
+                    assert_ne!(thread::current().id(), caller);
+                }
+                Ok::<(), &'static str>(())
+            })
+            .expect("executor remains usable after caught unwind");
+        assert!(recovered.is_success());
+        assert_eq!(recovered.completed_count(), 101);
+    }
 }
 
 #[test]
