@@ -112,7 +112,16 @@ own state rather than sharing one mutable callable across workers.
 
 The default reporter is `NoopReporter`. To observe lifecycle events, implement
 `qubit_progress::Reporter` and pass a shared reporter with `reporter_arc`; use
-`report_interval` to throttle running updates:
+`report_interval` to throttle running updates. The following example counts the
+started and terminal events.
+
+Before using this example, add the following direct dependency to your existing
+`[dependencies]` table. The example imports progress types directly; a transitive
+dependency does not make `qubit_progress` available for direct imports.
+
+```toml
+qubit-progress = { version = "0.9", default-features = false }
+```
 
 ```rust
 use std::sync::Arc;

@@ -98,7 +98,14 @@ worker 共享一个可变 callable。
 
 默认 reporter 是 `NoopReporter`。如需观察生命周期事件，实现
 `qubit_progress::Reporter`，并通过 `reporter_arc` 传入共享 reporter；使用
-`report_interval` 限制 running 更新频率：
+`report_interval` 限制 running 更新频率。下面的示例会统计任务开始和结束事件。
+
+使用下面的示例前，请在已有的 `[dependencies]` 表中添加以下直接依赖。
+示例直接使用进度类型；仅有传递依赖时，应用不能直接导入 `qubit_progress`。
+
+```toml
+qubit-progress = { version = "0.9", default-features = false }
+```
 
 ```rust
 use std::sync::Arc;
