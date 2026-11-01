@@ -13,6 +13,7 @@ use std::panic::panic_any;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::Barrier;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -560,42 +561,58 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
 
 #[test]
 fn test_rayon_batch_executor_runs_tasks_concurrently() {
+    const CHILD: &str = "QUBIT_RAYON_CONCURRENCY_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_panic_test_with_watchdog(
+            "executor::rayon_batch_executor_tests::test_rayon_batch_executor_runs_tasks_concurrently",
+            CHILD,
+        );
+        return;
+    }
     let executor = RayonBatchExecutor::builder()
-        .thread_count(4)
+        .thread_count(2)
         .sequential_threshold(1)
         .build()
-        .expect("rayon batch executor should build");
-    let active = Arc::new(AtomicUsize::new(0));
-    let max_active = Arc::new(AtomicUsize::new(0));
-    let tasks = (0..8)
-        .map(|_| TestTask::track_concurrency(Arc::clone(&active), Arc::clone(&max_active), Duration::from_millis(30)))
-        .collect::<Vec<_>>();
-
-    let result = executor
-        .execute_with_count(tasks, 8)
-        .expect("rayon batch should succeed");
-
-    assert_eq!(result.completed_count(), 8);
-    assert!(max_active.load(Ordering::Acquire) > 1);
+        .expect("two-worker executor should build");
+    let caller = thread::current().id();
+    let barrier = Barrier::new(2);
+    let tasks = (0..2).map(|_| {
+        || {
+            barrier.wait();
+            assert_ne!(thread::current().id(), caller);
+            Ok::<(), &'static str>(())
+        }
+    });
+    let outcome = executor.execute_with_count(tasks, 2).expect("exact batch");
+    assert!(outcome.is_success(), "both tasks must succeed");
+    assert_eq!(outcome.completed_count(), 2);
 }
 
 #[test]
 fn test_rayon_batch_executor_falls_back_to_sequential_below_threshold() {
-    let executor = RayonBatchExecutor::builder()
-        .thread_count(4)
-        .sequential_threshold(10)
-        .build()
-        .expect("rayon batch executor should build");
-    let active = Arc::new(AtomicUsize::new(0));
-    let max_active = Arc::new(AtomicUsize::new(0));
-    let tasks = (0..4)
-        .map(|_| TestTask::track_concurrency(Arc::clone(&active), Arc::clone(&max_active), Duration::from_millis(10)))
-        .collect::<Vec<_>>();
-
-    let result = executor.execute_with_count(tasks, 4).expect("batch should succeed");
-
-    assert_eq!(result.completed_count(), 4);
-    assert_eq!(max_active.load(Ordering::Acquire), 1);
+    for (workers, threshold, count, on_caller) in [
+        (4, 10, 0usize, true),
+        (4, 10, 9, true),
+        (4, 10, 10, true),
+        (1, 0, 2, true),
+        (4, 10, 11, false),
+    ] {
+        let executor = RayonBatchExecutor::builder()
+            .thread_count(workers)
+            .sequential_threshold(threshold)
+            .build()
+            .expect("valid path-test executor");
+        let caller = thread::current().id();
+        let tasks = (0..count).map(|_| {
+            move || {
+                assert_eq!(thread::current().id() == caller, on_caller);
+                Ok::<(), &'static str>(())
+            }
+        });
+        let outcome = executor.execute_with_count(tasks, count).expect("exact batch");
+        assert!(outcome.is_success(), "thread placement must match the selected path");
+        assert_eq!(outcome.completed_count(), count);
+    }
 }
 
 #[test]

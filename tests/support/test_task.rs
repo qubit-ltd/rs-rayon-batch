@@ -51,15 +51,6 @@ enum TestTaskAction {
         /// Sleep duration.
         duration: Duration,
     },
-    /// Track active concurrency while sleeping, then succeed.
-    TrackConcurrency {
-        /// Active task counter.
-        active: Arc<AtomicUsize>,
-        /// Maximum observed active task count.
-        max_active: Arc<AtomicUsize>,
-        /// Sleep duration.
-        duration: Duration,
-    },
 }
 
 /// Configurable runnable task for executor tests.
@@ -171,27 +162,6 @@ impl TestTask {
             action: TestTaskAction::SleepSuccess { duration },
         }
     }
-
-    /// Creates a task that tracks active concurrency while sleeping.
-    ///
-    /// # Parameters
-    ///
-    /// * `active` - Active task counter.
-    /// * `max_active` - Maximum active task counter.
-    /// * `duration` - Sleep duration.
-    ///
-    /// # Returns
-    ///
-    /// A concurrency-tracking successful task.
-    pub fn track_concurrency(active: Arc<AtomicUsize>, max_active: Arc<AtomicUsize>, duration: Duration) -> Self {
-        Self {
-            action: TestTaskAction::TrackConcurrency {
-                active,
-                max_active,
-                duration,
-            },
-        }
-    }
 }
 
 impl Runnable<&'static str> for TestTask {
@@ -223,33 +193,6 @@ impl Runnable<&'static str> for TestTask {
                 thread::sleep(*duration);
                 Ok(())
             }
-            TestTaskAction::TrackConcurrency {
-                active,
-                max_active,
-                duration,
-            } => {
-                let current = active.fetch_add(1, Ordering::AcqRel) + 1;
-                update_max(max_active, current);
-                thread::sleep(*duration);
-                active.fetch_sub(1, Ordering::AcqRel);
-                Ok(())
-            }
-        }
-    }
-}
-
-/// Updates `max_active` when `current` is greater than the stored value.
-///
-/// # Parameters
-///
-/// * `max_active` - Atomic maximum value to update.
-/// * `current` - Candidate active count.
-fn update_max(max_active: &AtomicUsize, current: usize) {
-    let mut observed = max_active.load(Ordering::Acquire);
-    while current > observed {
-        match max_active.compare_exchange(observed, current, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => return,
-            Err(value) => observed = value,
         }
     }
 }
