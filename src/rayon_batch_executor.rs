@@ -281,21 +281,20 @@ impl BatchExecutor for RayonBatchExecutor {
         call_with_executor(self, tasks, count)
     }
 
-    /// Executes counted callables and retains indexed successful outputs.
+    /// Executes counted runnable tasks and returns their batch outcome.
     ///
     /// Ordinary calls use Rayon workers. Small batches, single-worker
-    /// executors, and same-pool worker or source-producer reentry collect
-    /// outputs sequentially on the calling thread.
+    /// executors, and same-pool worker or source-producer reentry run
+    /// tasks sequentially on the calling thread.
     ///
     /// # Parameters
     ///
-    /// * `tasks` - Task source for the batch.
+    /// * `tasks` - Runnable task source, consumed once during execution.
     /// * `count` - Declared task count expected from `tasks`.
     ///
     /// # Returns
     ///
-    /// A structured batch result when reporting and count validation succeed,
-    /// or a batch-level error with the attached partial result.
+    /// The batch outcome with completion counts and task failures.
     ///
     /// # Errors
     ///
@@ -308,10 +307,13 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// # Panics
     ///
-    /// Task panics are captured in the outcome. Source conversion and
-    /// iteration panics, and synchronous reporter panics, propagate to the
-    /// caller. On the parallel path, panics from the scoped automatic running
-    /// reporter are returned as structured progress errors.
+    /// Unwinding panics from `Runnable::run` are captured in the outcome.
+    /// Panics from destroying the runnable task may propagate to the caller
+    /// without a structured partial outcome. Process-aborting panics cannot
+    /// be converted into task failures. Source conversion and iteration
+    /// panics, and synchronous reporter panics, propagate to the caller. On
+    /// the parallel path, panics from the scoped automatic running reporter
+    /// are returned as structured progress errors.
     fn execute_with_count<T, E, I>(
         &self,
         tasks: I,

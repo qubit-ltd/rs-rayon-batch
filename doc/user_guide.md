@@ -238,6 +238,12 @@ synchronous call contract and avoids nested pool deadlock. It does not merge
 the nested call's outcome into the outer outcome: the task must inspect or
 translate that result according to the application's error model.
 
+Direct same-pool reentry falls back to sequential execution. This protection
+does not guarantee progress for synchronous cycles across distinct pools, such
+as A → B → A. In the tested large nested batches, bounded producer sends
+prevented workers from reaching Rayon’s cooperative scope wait. Move
+orchestration outside the worker pools or remove the cyclic dependency.
+
 The following example checks both result layers: a batch-level error is translated first, and an unsuccessful inner outcome becomes an outer task error. It exercises both successful and failing inner tasks.
 
 ```rust
@@ -399,11 +405,15 @@ Inspect a successful call in two parts:
    callable positions and are sparse when tasks failed.
 
 On `BatchCallError`, inspect the attached outcome and partial outputs before
-choosing a retry. Task panics are captured as task failures. Iterator panics
-and synchronous `Started`/terminal reporter panics propagate to the caller.
-Reporter-returned errors are batch-level progress errors. A panic from the
-scoped automatic running reporter is also represented as a batch-level
-progress error. A scheduler
+choosing a retry. Unwinding panics from a runnable task body are captured as
+task failures. A panic from destroying the runnable itself may propagate to
+the caller without a structured partial outcome. Callable adapters destroy
+the consumed callable within the captured execution boundary during normal
+completion; this does not extend the runnable destruction guarantee.
+Process-aborting panics cannot be captured. Iterator panics and synchronous
+`Started`/terminal reporter panics propagate to the caller. Reporter-returned
+errors are batch-level progress errors. A panic from the scoped automatic
+running reporter is also represented as a batch-level progress error. A scheduler
 failure or count mismatch also carries the work that was accounted for before
 the error.
 

@@ -215,6 +215,10 @@ cargo run --locked --example progress_and_failure_policy
 同步调用契约，并避免嵌套线程池死锁。嵌套调用的结果不会自动合并到外层结果；任务应按应用
 的错误模型检查或转换这个结果。
 
+直接同池重入会回退到顺序执行；该保护不保证不同线程池之间同步循环调用（如 A → B → A）
+的进展。在本次测试的大批次嵌套场景中，有界生产发送使 worker 无法进入 Rayon 可协助执行任务的
+scope 等待阶段。应将编排移到工作线程池之外，或消除循环依赖。
+
 下面的示例先转换内层批次级错误，再检查内层 outcome；内层任务失败时，显式返回外层任务错误。示例同时运行内层成功和失败两个分支。
 
 ```rust
@@ -358,10 +362,12 @@ trait 的 `Send` 要求与稀疏、有序的结果契约保持不变。通用并
 1. 检查 `result.outcome().is_success()`、各项计数和 `failures()`。
 2. 检查或消费 `result.outputs()`；其下标对应原始 callable 位置，任务失败时可能是稀疏的。
 
-出现 `BatchCallError` 时，应先查看附带的 outcome 和部分输出，再决定是否重试。任务 panic
-会被捕获为任务失败；输入迭代器 panic 和同步 `Started`/终态进度回调 panic 会传播给调用者。
-reporter 返回的错误会成为批次级进度错误；scoped 自动 running reporter 的 panic 也会包装为
-批次级进度错误。调度失败或数量不匹配同样会保留错误发生前已经
+出现 `BatchCallError` 时，应先查看附带的 outcome 和部分输出，再决定是否重试。Runnable
+任务体的 unwinding panic 会被捕获为任务失败；Runnable 自身析构时的 panic 可能传播给调用者，
+且不保证返回结构化部分结果。Callable 适配器在正常完成时于捕获边界内析构已消费的 callable，
+这不意味着裸 Runnable 的析构也具有相同保证。导致进程终止的 panic 无法被捕获。输入迭代器
+panic 和同步 `Started`/终态进度回调 panic 会传播给调用者。reporter 返回的错误会成为批次级
+进度错误；scoped 自动 running reporter 的 panic 也会包装为批次级进度错误。调度失败或数量不匹配同样会保留错误发生前已经
 统计到的工作。
 
 ## 排障

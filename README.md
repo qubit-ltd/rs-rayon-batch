@@ -41,9 +41,11 @@ Import core batch and progress types directly from `qubit-batch` and
   sequential executor while preserving the configured task-failure policy;
   the default policy collects all task failures.
 - Keep stable task indexes for failures even when work finishes out of order.
-- Capture task panics as batch failures. Synchronous progress-reporter panics
-  propagate; panics from the automatic running reporter become a structured
-  progress error.
+- Capture unwinding panics from task bodies as batch failures. A panic while
+  destroying a `Runnable` may propagate without a structured partial outcome;
+  process-aborting panics cannot be captured. Synchronous progress-reporter
+  panics propagate; panics from the automatic running reporter become a
+  structured progress error.
 - Reuse the `qubit-batch` core API without forcing Rayon on sequential users.
 
 `BatchExecutor::call` runs each `Callable` through its `&mut self` call
