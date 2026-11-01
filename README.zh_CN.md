@@ -86,13 +86,15 @@ assert_eq!(result.failure_count(), 0);
 ## 来源重入与终止
 
 当调度器正在生产惰性来源时，会检测生产线程上的同池重入并回退到顺序执行；Rayon
-worker 上的重入也采用相同回退。独立线程池和克隆的执行器仍保持并行。Rayon 调度器
+worker 上的重入也采用相同回退。独立线程池拥有独立 worker 容量。克隆执行器共享 worker
+容量；来源阻塞时，另一个 clone 的批次可能延迟，且没有公平性保证。Rayon 调度器
 消费 `execute_with_source` 提供的来源，以区分真实耗尽与失败策略停止；返回前会排空
 已经接受的 token。
 
 小批次和单 worker 的 callable 调用直接在调用线程收集输出，Rayon 同池重入也采用该路径。
 策略停止时，完成数可能已经等于声明数；`Finished` 也可能包含失败任务。判断重试范围时，
 应同时检查完成计数、失败下标和终止原因，详见[用户手册](doc/user_guide.zh_CN.md)。
+进度上报与失败策略见[可运行示例](examples/progress_and_failure_policy.rs)和[用户手册](doc/user_guide.zh_CN.md)。
 
 ## 测试
 

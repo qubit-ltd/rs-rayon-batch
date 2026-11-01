@@ -92,15 +92,18 @@ assert_eq!(result.failure_count(), 0);
 ```
 
 See the [English user guide](doc/user_guide.md) for execution contracts,
-same-pool reentrancy, result memory, and chunk retry boundaries. Chinese
+same-pool reentrancy, result memory, and chunk retry boundaries. The guide also
+links a [progress and failure policy example](examples/progress_and_failure_policy.rs)
+and covers reporters and shared-pool scheduling. Chinese
 readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 
 ## Source reentrancy and termination
 
 When a scheduler produces a lazy source, same-pool reentry from that producer
 thread is detected and falls back to sequential execution. Reentry from a
-Rayon worker has the same fallback, while independent pools and cloned
-executors remain parallel. The Rayon scheduler consumes the source supplied by
+Rayon worker has the same fallback. Clones share worker capacity; a blocked
+source can delay another clone's batch, with no cross-batch fairness guarantee.
+Independent pools have independent worker capacity. The Rayon scheduler consumes the source supplied by
 `execute_with_source`, which distinguishes real exhaustion from a failure-policy
 stop; accepted tokens are drained before return.
 

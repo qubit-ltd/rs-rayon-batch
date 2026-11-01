@@ -94,6 +94,47 @@ assert_eq!(result.outputs().len(), 7);
 `SequentialBatchExecutor` 的非 `Send` callable 路径。并行任务应各自拥有状态，不要让多个
 worker 共享一个可变 callable。
 
+### 接入进度上报
+
+默认 reporter 是 `NoopReporter`。如需观察生命周期事件，实现
+`qubit_progress::Reporter`，并通过 `reporter_arc` 传入共享 reporter；使用
+`report_interval` 限制 running 更新频率：
+
+```rust
+let executor = RayonBatchExecutor::builder()
+    .reporter_arc(reporter.clone())
+    .report_interval(Duration::from_millis(10))
+    .build()?;
+```
+
+`Started` 和终态 `Succeeded` 或 `Failed` 描述批次。`Running` 是可选更新，可能一次也不产生，
+尤其是短批次。执行器 clone 共享 reporter，因此并发批次的回调事件可能交错；事件不提供应用级
+批次关联。应用负责关联、指标存储、日志和重试决策。下面的可运行示例只统计生命周期事件；生产
+应用应接入自己的指标和日志。回调不应等待依赖同一线程池的工作：来源阻塞时，同池 worker
+可能持续被占用，无法保证其他批次及时获得进展。
+
+### 选择任务失败策略
+
+默认策略是 `TaskFailurePolicy::Continue`。`StopOnFirstFailure` 在一次失败后停止接纳新工作；
+`StopAfterFailures(NonZeroUsize)` 在达到配置阈值后停止接纳。任务返回错误和被捕获的任务
+panic 都计为失败。这些策略是协作式的：返回前会排空已接纳任务，最终失败数可能超过阈值。
+即使 `call` 返回 `Ok`，也要检查 outcome：
+
+```rust
+let executor = RayonBatchExecutor::builder()
+    .task_failure_policy(TaskFailurePolicy::StopAfterFailures(
+        NonZeroUsize::new(2).expect("positive limit"),
+    ))
+    .build()?;
+let result = executor.call(calls)?;
+let outcome = result.outcome();
+assert!(!outcome.is_success());
+assert_eq!(result.outputs().len(), outcome.succeeded_count());
+```
+
+[进度与失败策略可运行示例](../examples/progress_and_failure_policy.rs)展示三种策略，并检查保留的
+输出下标和值。批次级错误也可能附带部分 outcome 和输出；不要将它们视为成功完成的批次。
+
 ## 进阶用法
 
 ### 同一线程池的重入
@@ -153,7 +194,9 @@ for fail_inner in [false, true] {
 批次返回 Ok 不代表任务全部成功。该示例把内层失败归并为一个外层任务错误，不会合并内层失败下标；应用需要明细时，应自行保留或转换内层 outcome。
 
 来自普通外部线程的调用可以并发使用执行器 clone。各次调用的输入来源、结果和 callable
-值彼此独立。
+值彼此独立，但 clone 共享 worker 线程池。一个来源阻塞时，不能保证另一个 clone 的任务及时
+获得进展或公平调度。应让来源及时产出，并避免回调或任务等待依赖同一线程池的工作。观察到的
+延迟不足以证明永久死锁；来源恢复后，有限工作可以继续排空。
 
 ### 输入数量与业务影响量
 
@@ -245,8 +288,9 @@ trait 的 `Send` 要求与稀疏、有序的结果契约保持不变。通用并
 2. 检查或消费 `result.outputs()`；其下标对应原始 callable 位置，任务失败时可能是稀疏的。
 
 出现 `BatchCallError` 时，应先查看附带的 outcome 和部分输出，再决定是否重试。任务 panic
-会被捕获为任务失败；输入迭代器 panic 和同步进度回调 panic 会传播给调用者；自动 running
-reporter 失败会作为批次级进度错误返回。调度失败或数量不匹配同样会保留错误发生前已经
+会被捕获为任务失败；输入迭代器 panic 和同步 `Started`/终态进度回调 panic 会传播给调用者。
+reporter 返回的错误会成为批次级进度错误；scoped 自动 running reporter 的 panic 也会包装为
+批次级进度错误。调度失败或数量不匹配同样会保留错误发生前已经
 统计到的工作。
 
 ## 排障
@@ -268,6 +312,7 @@ reporter 失败会作为批次级进度错误返回。调度失败或数量不�
   `FnMut`，并且 Rayon 路径要求相关类型实现 `Send`。
 - 同池重入会使用顺序执行，不会额外制造并行度，也不会自动合并嵌套结果。
 - 进度间隔只会在实现定义的进度点做节流，不保证到达墙上时限就立即产生事件。
+- clone 共享 worker 容量；来源阻塞时，不保证跨批次公平性或及时进展。
 - 重试行为应依据副作用、事务和幂等规则决定；部分结果表示统计边界，不表示未报告工作
   一定没有发生。
 
@@ -289,5 +334,6 @@ crate 内部使用。来源真实返回的 `None` 记录为耗尽；此前的 `N
 数量不足；否则提前因策略停止会返回 `StoppedByTaskFailurePolicy` 的部分结果。`Finished`
 并不表示结果一定成功。
 
-Rayon worker 上的同池重入和惰性来源生产线程上的同池重入都会回退到顺序执行。独立线程
-池和并发克隆仍保持并行。
+Rayon worker 上的同池重入和惰性来源生产线程上的同池重入都会回退到顺序执行。clone 共享
+线程池容量；来源阻塞时，另一个 clone 的批次可能延迟，且没有跨批次公平性保证。独立线程池
+拥有独立 worker 容量，但会增加线程资源。

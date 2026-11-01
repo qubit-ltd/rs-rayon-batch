@@ -108,6 +108,55 @@ successful value, and error to be `Send`; it does not provide the concrete
 sequential executor's non-`Send` callable path. Give each parallel task its
 own state rather than sharing one mutable callable across workers.
 
+### Progress reporting
+
+The default reporter is `NoopReporter`. To observe lifecycle events, implement
+`qubit_progress::Reporter` and pass a shared reporter with `reporter_arc`; use
+`report_interval` to throttle running updates:
+
+```rust
+let executor = RayonBatchExecutor::builder()
+    .reporter_arc(reporter.clone())
+    .report_interval(Duration::from_millis(10))
+    .build()?;
+```
+
+`Started` and a terminal `Succeeded` or `Failed` event describe the batch.
+`Running` is optional and may occur zero times, especially for a short batch.
+Clones share the reporter, so callbacks from concurrent batches may interleave.
+Events do not provide application-level batch correlation; the application
+owns correlation, metric storage, logging, and retry decisions. The runnable
+example below counts lifecycle events only. Production applications can
+connect their own metrics and logs. A callback should not wait for work that
+needs the same pool: shared workers can remain occupied while a source blocks,
+so timely progress for another batch is not guaranteed.
+
+### Choose a task failure policy
+
+The default is `TaskFailurePolicy::Continue`. `StopOnFirstFailure` stops
+admitting more work after a failure; `StopAfterFailures(NonZeroUsize)` does so
+after the configured threshold. A task error and a captured task panic both
+count as failures. These policies are cooperative: accepted tasks are drained
+before return, and the final failure count can exceed the threshold. Always
+inspect the outcome even when `call` returns `Ok`:
+
+```rust
+let executor = RayonBatchExecutor::builder()
+    .task_failure_policy(TaskFailurePolicy::StopAfterFailures(
+        NonZeroUsize::new(2).expect("positive limit"),
+    ))
+    .build()?;
+let result = executor.call(calls)?;
+let outcome = result.outcome();
+assert!(!outcome.is_success());
+assert_eq!(result.outputs().len(), outcome.succeeded_count());
+```
+
+The [progress and failure policy example](../examples/progress_and_failure_policy.rs)
+shows all three policies and validates retained output indexes and values. A
+batch-level error may also carry a partial outcome and outputs; do not treat
+them as a completed successful batch.
+
 ## Advanced Usage
 
 ### Reentrant use of the same pool
@@ -169,7 +218,12 @@ for fail_inner in [false, true] {
 An Ok batch result does not imply that its tasks succeeded. This example maps inner failures to one outer task error; it does not merge inner failure indexes. Preserve or translate the inner outcome if the application needs those details.
 
 Calls made from ordinary external threads can use executor clones
-concurrently. Their sources, outcomes, and callable values remain independent.
+concurrently. Their sources, outcomes, and callable values remain independent,
+but clones share the same worker pool. If one source blocks, tasks from another
+clone cannot be guaranteed timely progress or fairness. Keep sources timely,
+and avoid callbacks or tasks waiting on work that requires the same pool. This
+observed delay does not establish permanent deadlock; finite work can drain
+after the source resumes.
 
 ### Input counts and business effects
 
@@ -276,8 +330,10 @@ Inspect a successful call in two parts:
 
 On `BatchCallError`, inspect the attached outcome and partial outputs before
 choosing a retry. Task panics are captured as task failures. Iterator panics
-and synchronous reporter panics propagate to the caller; an automatic running
-reporter failure is represented as a batch-level progress error. A scheduler
+and synchronous `Started`/terminal reporter panics propagate to the caller.
+Reporter-returned errors are batch-level progress errors. A panic from the
+scoped automatic running reporter is also represented as a batch-level
+progress error. A scheduler
 failure or count mismatch also carries the work that was accounted for before
 the error.
 
@@ -304,6 +360,8 @@ the error.
   parallelism or combine nested outcomes.
 - Progress intervals throttle implementation-defined progress points; they do
   not guarantee an immediate event at a wall-clock deadline.
+- Clones share worker capacity and provide no cross-batch fairness or
+  timely-progress guarantee while a source is blocked.
 - Choose retry behavior from side-effect, transaction, and idempotency rules;
   a partial result is an accounting boundary, not proof that unreported work
   did not happen.
@@ -330,5 +388,7 @@ partial outcome with `StoppedByTaskFailurePolicy`. `Finished` does not imply
 that the outcome is successful.
 
 Both a same-pool Rayon worker reentry and same-pool reentry from a lazy-source
-producer fall back to sequential execution. Independent pools and concurrent
-clones retain parallel execution.
+producer fall back to sequential execution. Clones share pool capacity; a
+blocked source can delay another clone's batch, with no cross-batch fairness
+guarantee. Independent pools have independent worker capacity at the cost of
+additional threads.
