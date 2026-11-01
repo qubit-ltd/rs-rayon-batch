@@ -10,6 +10,8 @@
 const CARGO_TOML: &str = include_str!("../../Cargo.toml");
 const README_EN: &str = include_str!("../../README.md");
 const README_ZH: &str = include_str!("../../README.zh_CN.md");
+const USER_GUIDE_EN: &str = include_str!("../../doc/user_guide.md");
+const USER_GUIDE_ZH: &str = include_str!("../../doc/user_guide.zh_CN.md");
 const RAYON_BATCH_EXECUTOR: &str = include_str!("../../src/rayon_batch_executor.rs");
 
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
@@ -35,13 +37,36 @@ fn test_readme_dependency_version_matches_cargo_toml() {
     assert!(
         readme_version_documents_same_release(readme_en_rayon, package_version),
         concat!(
-            "README qubit-rayon-batch ({readme_en_rayon:?}) should match package version ",
-            "{package_version:?} (exact or minor line, e.g. 0.4 vs 0.4.1)"
-        )
+            "README qubit-rayon-batch ({:?}) should match package version ",
+            "{:?} (exact or minor line, e.g. 0.4 vs 0.4.1)"
+        ),
+        readme_en_rayon,
+        package_version,
     );
 
     assert_eq!(readme_en_batch, cargo_qubit_batch);
     assert_eq!(readme_zh_batch, cargo_qubit_batch);
+}
+
+/// Ensures both user guides declare the current release and install version.
+#[test]
+fn test_user_guide_release_matches_cargo_toml() {
+    let package = extract_package_version(CARGO_TOML).expect("Cargo package version must exist");
+    let en = extract_guide_release(USER_GUIDE_EN).expect("English guide release must exist");
+    let zh = extract_guide_release(USER_GUIDE_ZH).expect("Chinese guide release must exist");
+    assert_eq!(en, zh, "guide release declarations must agree");
+    for (name, guide) in [("English", USER_GUIDE_EN), ("Chinese", USER_GUIDE_ZH)] {
+        let release = extract_guide_release(guide).expect("guide release must exist");
+        assert!(
+            readme_version_documents_same_release(release, package),
+            "{name} guide release {release} must match package {package}"
+        );
+        let dependency = extract_readme_qubit_rayon_batch_version(guide).expect("guide dependency snippet must exist");
+        assert!(
+            readme_version_documents_same_release(dependency, package),
+            "{name} guide dependency {dependency} must match package {package}"
+        );
+    }
 }
 
 /// Ensures both README files document the current executor type.
@@ -78,6 +103,13 @@ fn extract_readme_qubit_rayon_batch_version(content: &str) -> Option<&str> {
         }
     }
     None
+}
+
+/// Extracts the release declared in the guide's applicability statement.
+fn extract_guide_release(content: &str) -> Option<&str> {
+    let marker = "`qubit-rayon-batch` ";
+    let line = content.lines().find(|line| line.contains(marker))?;
+    line.split_once(marker)?.1.split_whitespace().next()
 }
 
 /// Extracts the `qubit-batch` dependency version from a README file.
