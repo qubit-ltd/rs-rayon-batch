@@ -73,9 +73,7 @@ fn main() {
                 }
             }
         });
-        let result = executor
-            .call(calls)
-            .expect("count and reporting should succeed");
+        let result = executor.call(calls).expect("count and reporting should succeed");
         let outcome = result.outcome();
         assert!(!outcome.is_success());
         assert_eq!(result.outputs().len(), outcome.succeeded_count());
@@ -105,8 +103,5 @@ fn main() {
     }
     assert_eq!(reporter.started.load(Ordering::Relaxed), 3);
     assert_eq!(reporter.terminal.load(Ordering::Relaxed), 3);
-    println!(
-        "running events={}",
-        reporter.running.load(Ordering::Relaxed)
-    );
+    println!("running events={}", reporter.running.load(Ordering::Relaxed));
 }

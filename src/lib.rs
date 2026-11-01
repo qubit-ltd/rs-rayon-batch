@@ -13,7 +13,8 @@
 //! [`BatchExecutor`](qubit_batch::BatchExecutor) trait and batch result types
 //! belong to `qubit-batch`; progress reporting through
 //! [`Reporter`](qubit_progress::Reporter) belongs to
-//! `qubit-progress`. Cloning an executor shares its Rayon pool and configuration.
+//! `qubit-progress`. Cloning an executor shares its Rayon pool and
+//! configuration.
 //!
 //! Small batches, executors configured with one worker, calls made from a
 //! worker in the same pool, and lazy-source producers that reenter that pool

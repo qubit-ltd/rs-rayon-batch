@@ -574,9 +574,7 @@ fn test_paused_source_releases_shared_pool_after_resume() {
                 }
             });
             second_executor.for_each(source, move |_| {
-                started_sender
-                    .send(())
-                    .expect("second task start is observed");
+                started_sender.send(()).expect("second task start is observed");
                 Ok::<(), ()>(())
             })
         });
@@ -589,9 +587,7 @@ fn test_paused_source_releases_shared_pool_after_resume() {
             COORDINATION_TIMEOUT
         };
         let observation = started_receiver.recv_timeout(observation_window);
-        resume_sender
-            .send(())
-            .expect("first source should still be waiting");
+        resume_sender.send(()).expect("first source should still be waiting");
         let first_outcome = first
             .join()
             .expect("first producer should not panic")
@@ -605,16 +601,10 @@ fn test_paused_source_releases_shared_pool_after_resume() {
         assert_eq!(first_outcome.completed_count(), 2);
         assert_eq!(second_outcome.completed_count(), 2);
         if shared_pool {
-            assert!(!matches!(
-                observation,
-                Err(mpsc::RecvTimeoutError::Disconnected)
-            ));
+            assert!(!matches!(observation, Err(mpsc::RecvTimeoutError::Disconnected)));
             eprintln!("shared pool task-start observation: {observation:?}");
         } else {
-            assert!(
-                observation.is_ok(),
-                "independent pool must make progress during pause"
-            );
+            assert!(observation.is_ok(), "independent pool must make progress during pause");
         }
     }
 }
