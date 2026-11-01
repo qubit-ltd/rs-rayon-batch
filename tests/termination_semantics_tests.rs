@@ -6,10 +6,6 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Failure-policy termination describes source observation, not task success.
-use std::sync::mpsc;
-use std::time::Duration;
-
-use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::SequentialBatchExecutor;
@@ -27,56 +23,6 @@ fn test_last_declared_failure_does_not_prove_exhaustion() {
     assert_eq!(outcome.completed_count(), outcome.task_count());
     assert_eq!(outcome.termination(), BatchTermination::StoppedByTaskFailurePolicy);
     assert!(!outcome.is_success());
-}
-
-#[test]
-fn test_source_exhaustion_precedes_failure_and_count_validation() {
-    for expected in [1usize, 2] {
-        let executor = Executor::builder()
-            .thread_count(2)
-            .sequential_threshold(0)
-            .task_failure_policy(TaskFailurePolicy::StopOnFirstFailure)
-            .build()
-            .expect("valid executor");
-        let (sender, receiver) = mpsc::channel();
-        let mut sender = Some(sender);
-        let mut task = Some(move || {
-            receiver
-                .recv_timeout(Duration::from_secs(3))
-                .expect("source exhaustion signal");
-            Err::<(), _>("failed after exhaustion")
-        });
-        let source = std::iter::from_fn(move || {
-            if task.is_some() {
-                task.take()
-            } else {
-                if let Some(sender) = sender.take() {
-                    sender.send(()).expect("waiting task");
-                }
-                None
-            }
-        });
-        let result = executor.execute_with_count(source, expected);
-        if expected == 1 {
-            let outcome = result.expect("exact source");
-            assert_eq!(outcome.termination(), BatchTermination::Finished);
-            assert_eq!(outcome.failed_count(), 1);
-            assert!(!outcome.is_success());
-        } else {
-            match result.expect_err("short exhausted source") {
-                BatchExecutionError::CountShortfall {
-                    expected,
-                    actual,
-                    outcome,
-                    ..
-                } => {
-                    assert_eq!((expected, actual), (2, 1));
-                    assert_eq!(outcome.failed_count(), 1);
-                }
-                error => panic!("unexpected error: {error:?}"),
-            }
-        }
-    }
 }
 
 #[test]

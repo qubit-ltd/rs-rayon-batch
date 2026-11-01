@@ -47,16 +47,24 @@ fn test_rayon_preserves_exhausted_source_contract() {
         if expected == 1 {
             let outcome = result.expect("exact source should return an outcome");
             assert_eq!(outcome.termination(), BatchTermination::Finished);
+            assert_eq!(outcome.completed_count(), 1);
             assert_eq!(outcome.failed_count(), 1);
+            assert!(!outcome.is_success());
         } else {
-            assert!(matches!(
-                result,
-                Err(BatchExecutionError::CountShortfall {
-                    expected: 2,
-                    actual: 1,
+            match result.expect_err("short exhausted source must fail count validation") {
+                BatchExecutionError::CountShortfall {
+                    expected,
+                    actual,
+                    outcome,
                     ..
-                })
-            ));
+                } => {
+                    assert_eq!((expected, actual), (2, 1));
+                    assert_eq!(outcome.completed_count(), 1);
+                    assert_eq!(outcome.failed_count(), 1);
+                    assert!(!outcome.is_success());
+                }
+                error => panic!("unexpected error: {error:?}"),
+            }
         }
     }
 }

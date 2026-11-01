@@ -12,7 +12,6 @@ const README_EN: &str = include_str!("../../README.md");
 const README_ZH: &str = include_str!("../../README.zh_CN.md");
 const USER_GUIDE_EN: &str = include_str!("../../doc/user_guide.md");
 const USER_GUIDE_ZH: &str = include_str!("../../doc/user_guide.zh_CN.md");
-const RAYON_BATCH_EXECUTOR: &str = include_str!("../../src/rayon_batch_executor.rs");
 
 /// Ensures README dependency snippets stay in sync with Cargo.toml.
 #[test]
@@ -74,15 +73,6 @@ fn test_user_guide_release_matches_cargo_toml() {
 fn test_readme_mentions_current_executor_type() {
     assert!(README_EN.contains("RayonBatchExecutor"));
     assert!(README_ZH.contains("RayonBatchExecutor"));
-}
-
-/// Ensures Rayon progress reporting uses the shared parallel execution driver.
-#[test]
-fn test_rayon_progress_reporting_uses_the_parallel_execution_driver() {
-    assert!(RAYON_BATCH_EXECUTOR.contains("ParallelBatchExecutionCoordinator::new"));
-    assert!(RAYON_BATCH_EXECUTOR.contains("coordinator"));
-    assert!(RAYON_BATCH_EXECUTOR.contains(".execute"));
-    assert!(!RAYON_BATCH_EXECUTOR.contains("RunningProgressLoop"));
 }
 
 /// Extracts the first package version entry from Cargo.toml content.

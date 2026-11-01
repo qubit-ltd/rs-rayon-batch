@@ -8,6 +8,7 @@
 //! Tests for [`RayonBatchExecutorBuilder`](qubit_rayon_batch::RayonBatchExecutorBuilder).
 
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use qubit_batch::BatchExecutor;
@@ -74,4 +75,37 @@ fn test_rayon_batch_executor_builder_no_reporter_replaces_custom_reporter() {
 
     assert_eq!(outcome.completed_count(), 1);
     assert!(reporter.events().is_empty());
+}
+
+#[test]
+fn test_builder_thread_name_prefix_applies_to_shared_pool_workers() {
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .thread_name_prefix("builder-test-worker")
+        .build()
+        .expect("named executor must build");
+    let caller = thread::current().id();
+    let cloned = executor.clone();
+    for current in [&executor, &cloned] {
+        let result = current
+            .call((0..4).map(|_| {
+                || {
+                    let worker = thread::current();
+                    Ok::<_, ()>((worker.id(), worker.name().map(str::to_owned)))
+                }
+            }))
+            .expect("named worker batch must complete");
+        assert!(result.outcome().is_success());
+        assert_eq!(result.outcome().completed_count(), 4);
+        assert_eq!(result.outputs().len(), 4);
+        for output in result.outputs() {
+            let (worker_id, name) = output.value();
+            assert_ne!(*worker_id, caller);
+            assert!(
+                matches!(name.as_deref(), Some("builder-test-worker-0" | "builder-test-worker-1")),
+                "unexpected worker name: {name:?}"
+            );
+        }
+    }
 }
