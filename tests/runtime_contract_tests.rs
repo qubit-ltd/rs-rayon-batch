@@ -125,6 +125,58 @@ impl TaskGate {
     }
 }
 
+/// Retains the peak number of generated tasks not yet completed.
+#[derive(Default)]
+struct AdmissionWindowState {
+    observed: usize,
+    completed: usize,
+    max_unfinished: usize,
+}
+
+impl AdmissionWindowState {
+    /// Records one generated task and preserves its unfinished-window peak.
+    fn observe_task(&mut self) {
+        self.observed += 1;
+        self.max_unfinished = self.max_unfinished.max(self.observed - self.completed);
+    }
+
+    /// Records a task reaching its normal return point after the gate.
+    fn complete_task(&mut self) {
+        self.completed += 1;
+    }
+}
+
+#[test]
+fn test_admission_window_observer_retains_transient_peak() {
+    const LIMIT: usize = 5;
+    let mut bounded = AdmissionWindowState::default();
+    for _ in 0..LIMIT {
+        bounded.observe_task();
+    }
+    for _ in 0..8 {
+        bounded.complete_task();
+        bounded.observe_task();
+    }
+    while bounded.completed < bounded.observed {
+        bounded.complete_task();
+    }
+    assert_eq!(bounded.observed, 13);
+    assert_eq!(bounded.completed, 13);
+    assert_eq!(bounded.max_unfinished, LIMIT);
+
+    let mut exceeded = AdmissionWindowState::default();
+    for _ in 0..=LIMIT {
+        exceeded.observe_task();
+    }
+    for _ in 0..=LIMIT {
+        exceeded.complete_task();
+    }
+    assert_eq!(exceeded.observed, 6);
+    assert_eq!(exceeded.completed, 6);
+    assert_eq!(exceeded.max_unfinished, LIMIT + 1);
+    assert!(exceeded.max_unfinished > LIMIT);
+}
+
 /// Causal events emitted by the reporter and the observed task source.
 #[derive(Debug)]
 enum RuntimeEvent {
@@ -349,19 +401,30 @@ fn test_blocked_workers_bound_unfinished_admission_window() {
     let started = Arc::new(AtomicUsize::new(0));
     let completed = Arc::new(AtomicUsize::new(0));
     let gate = Arc::new(TaskGate::default());
+    let window = Arc::new(Mutex::new(AdmissionWindowState::default()));
 
     let observed_by_iterator = Arc::clone(&observed);
     let started_by_task = Arc::clone(&started);
     let completed_by_task = Arc::clone(&completed);
     let gate_by_task = Arc::clone(&gate);
+    let window_by_iterator = Arc::clone(&window);
+    // The window includes tasks held by the producer before they are sent. Atomic
+    // counters coordinate the handshake, while one mutex orders every observed
+    // and completed event for the peak.
     let tasks = (0..ITEM_COUNT).map(move |_| {
+        window_by_iterator
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .observe_task();
         observed_by_iterator.fetch_add(1, Ordering::AcqRel);
         let started = Arc::clone(&started_by_task);
         let completed = Arc::clone(&completed_by_task);
         let gate = Arc::clone(&gate_by_task);
+        let window = Arc::clone(&window_by_iterator);
         move || {
             started.fetch_add(1, Ordering::AcqRel);
             gate.wait();
+            window.lock().unwrap_or_else(PoisonError::into_inner).complete_task();
             completed.fetch_add(1, Ordering::AcqRel);
             Ok::<(), &'static str>(())
         }
@@ -373,19 +436,25 @@ fn test_blocked_workers_bound_unfinished_admission_window() {
 
     wait_for_count(&started, WORKER_COUNT);
     wait_for_count(&observed, MAX_UNFINISHED_ACCEPTED);
-    assert_eq!(completed.load(Ordering::Acquire), 0);
-    assert!(
-        observed.load(Ordering::Acquire) <= MAX_UNFINISHED_ACCEPTED,
-        "the producer consumed beyond the bounded unfinished window"
-    );
-
+    let completed_before_release = completed.load(Ordering::Acquire);
     gate.release_all();
     let outcome = result_receiver
         .recv_timeout(COORDINATION_TIMEOUT)
         .expect("the released batch should return")
         .expect("the released batch should complete successfully");
+    assert_eq!(completed_before_release, 0);
+    assert!(outcome.is_success());
     assert_eq!(outcome.completed_count(), ITEM_COUNT);
     assert_eq!(completed.load(Ordering::Acquire), ITEM_COUNT);
+    let window = window.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(window.observed, ITEM_COUNT);
+    assert_eq!(window.completed, ITEM_COUNT);
+    assert!(
+        window.max_unfinished <= MAX_UNFINISHED_ACCEPTED,
+        "unfinished window peaked at {}, exceeding limit {}",
+        window.max_unfinished,
+        MAX_UNFINISHED_ACCEPTED,
+    );
 }
 
 #[test]
