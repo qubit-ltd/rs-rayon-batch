@@ -8,8 +8,23 @@ Environment: Intel Core i5-9600K, six cores, Linux x86_64 7.0.0-30-generic,
 Rust 1.94.0 / LLVM 21.1.8, release profile, NoopReporter. Baselines are
 qubit-batch `62e2a3d` and qubit-rayon-batch `99ce8c5`, with the same new
 benchmark sources overlaid. Path dependency qubit-progress is 0.8.3 in both.
-The candidate adds direct sequential callable collection and reusable chunks;
-the production Rayon shared queue is unchanged.
+
+### Historical snapshot record
+
+The retained record identifies the baseline commits as qubit-batch
+`62e2a3d47793a9035e475f09eedc9fe2dab5db15` and qubit-rayon-batch
+`99ce8c5457569dba6ab09db4144f57cca9e3b2f6`, but does not identify the measured
+candidate commits, the exact benchmark overlay revision, or the candidate
+dependency snapshot. The original Criterion samples are not retained in the
+repository. Related implementation commits describe code history, not which
+builds produced these measurements. The table is a historical observation,
+not a reproducible comparison of the current release. Running the current
+benchmark measures the current workload; it does not recreate the complete
+historical comparison. See the related [rs-batch performance record](https://github.com/qubit-ltd/rs-batch/blob/main/doc/performance.md#callable-fallback-measurements-2026-09-09).
+
+The historical record describes the candidate as adding direct sequential
+callable collection and reusable chunks; the production Rayon shared queue was
+unchanged.
 
 `cargo bench --locked --bench call_fallback_bench` covers 0/1/32/100/101/1024
 items, scalar/String outputs, two workers with threshold 100 or 0, and one
@@ -30,8 +45,10 @@ Selected means and 95% confidence intervals, in microseconds:
 These are sequentially collected local measurements, not a portable speedup
 promise. Worker creation and system scheduling make tiny forced-parallel calls
 especially noisy. Do not change the default threshold of 100 from these data.
-Criterion raw estimates and sample data are emitted under `target/criterion`.
-Use the same benchmark source and dependency checkout for baseline comparison.
+A new run emits Criterion raw estimates and sample data under
+`target/criterion`; this is the output location for new measurements, not a
+retained location for the historical samples. Use the same benchmark source
+and dependency checkout for any new baseline comparison.
 
 ## Queue candidate rejected by correctness
 

@@ -7,8 +7,19 @@
 环境为 Intel Core i5-9600K（6核）、Linux x86_64 7.0.0-30-generic、Rust 1.94.0 /
 LLVM 21.1.8、release 构建和 NoopReporter。基线是 qubit-batch `62e2a3d` 与
 qubit-rayon-batch `99ce8c5`，覆盖相同的新 benchmark 源文件；两组都使用本地
-qubit-progress 0.8.3。改进版本加入直接顺序 callable 收集及缓冲区复用，生产 Rayon
-共享队列保持原样。
+qubit-progress 0.8.3。
+
+### 历史快照记录
+
+保留记录标明的基线提交为 qubit-batch
+`62e2a3d47793a9035e475f09eedc9fe2dab5db15` 和 qubit-rayon-batch
+`99ce8c5457569dba6ab09db4144f57cca9e3b2f6`，但没有记录实测候选提交、benchmark
+overlay 的精确版本或候选依赖快照。仓库未保留原始 Criterion 样本。相关实现提交描述的是
+代码历史，不能证明哪些构建产生了这些测量。表格是历史观测，不能作为当前版本的可复现比较。
+运行当前 benchmark 测量的是当前负载，不能重建完整的历史比较。参见相关的
+[rs-batch 性能记录](https://github.com/qubit-ltd/rs-batch/blob/main/doc/performance.zh_CN.md#callable-回退测量2026-09-09)。
+
+历史记录将候选描述为加入直接顺序 callable 收集及缓冲区复用；生产 Rayon 共享队列保持原样。
 
 运行 `cargo bench --locked --bench call_fallback_bench` 可覆盖 0/1/32/100/101/1024 项、
 标量和 String 返回值，以及双 worker（阈值100/0）和单 worker（阈值0）配置。执行器在
@@ -25,8 +36,9 @@ qubit-progress 0.8.3。改进版本加入直接顺序 callable 收集及缓冲�
 | parallel / 1024 | 2057.423 [2036.004, 2079.127] | 2399.644 [2144.694, 2781.124] |
 
 这些数据来自本机串行测量，不构成通用加速承诺。线程创建与系统调度会明显影响强制并行的
-极小批次，不应据此修改默认阈值100。Criterion 原始估计与样本保存在 `target/criterion`；
-复测基线时应使用相同 benchmark 源码和依赖检出版本。
+极小批次，不应据此修改默认阈值100。新运行会在 `target/criterion` 写出 Criterion 原始估计与样本；
+这是新测量的产物位置，历史样本并未保存在此处。进行新的基线对比时，应使用相同 benchmark
+源码和依赖检出版本。
 
 ## 因正确性失败淘汰队列候选
 
