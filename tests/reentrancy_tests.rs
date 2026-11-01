@@ -282,6 +282,12 @@ fn test_nested_from_source_producer_completes() {
 
 #[test]
 fn test_source_panic_does_not_leak_active_guard() {
+    const CHILD: &str = "QUBIT_RAYON_GUARD_CLEANUP_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_with_watchdog("test_source_panic_does_not_leak_active_guard", CHILD);
+        return;
+    }
+
     struct PanicSource;
 
     impl Iterator for PanicSource {

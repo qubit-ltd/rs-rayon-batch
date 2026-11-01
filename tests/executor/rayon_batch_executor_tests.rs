@@ -10,13 +10,17 @@
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::panic::panic_any;
+use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
@@ -37,6 +41,40 @@ use crate::support::RecordingProgressReporter;
 use crate::support::TestCallable;
 use crate::support::TestTask;
 use crate::support::panic_payload_message;
+
+/// Runs a precisely named test in a child process with a bounded lifetime.
+///
+/// # Parameters
+///
+/// * `test_name` - Complete libtest name selected with `--exact`.
+/// * `marker` - Environment variable that selects the child branch and avoids
+///   recursively spawning another child.
+///
+/// # Panics
+///
+/// Panics if the test child cannot start, exits unsuccessfully, or exceeds the
+/// 10-second watchdog.
+fn run_panic_test_with_watchdog(test_name: &str, marker: &str) {
+    let mut child = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", test_name, "--nocapture"])
+        .env(marker, "1")
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("panic test child should start");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = child.try_wait().expect("child status") {
+            assert!(status.success(), "panic test child failed: {status}");
+            return;
+        }
+        if Instant::now() >= deadline {
+            child.kill().expect("terminate stalled child");
+            let _ = child.wait();
+            panic!("source panic test exceeded watchdog");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
 
 #[test]
 fn test_rayon_batch_executor_returns_progress_report_error() {
@@ -680,6 +718,14 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
 
 #[test]
 fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
+    const CHILD: &str = "QUBIT_RAYON_SOURCE_PANIC_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_panic_test_with_watchdog(
+            "executor::rayon_batch_executor_tests::test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop",
+            CHILD,
+        );
+        return;
+    }
     const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
@@ -687,17 +733,28 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
         .report_interval(Duration::ZERO)
         .build()
         .expect("rayon batch executor should build");
+    let completed = Arc::new(AtomicUsize::new(0));
     let tasks = (0..3).map(|index| {
         if index == 1 {
             panic_any(PANIC_MESSAGE);
         }
-        TestTask::sleep_success(Duration::from_millis(5))
+        TestTask::count_success(Arc::clone(&completed))
     });
 
     let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 3)))
         .expect_err("iterator panic should be propagated");
 
     assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
+    assert_eq!(completed.load(Ordering::Acquire), 1);
+    let caller = thread::current().id();
+    let outcome = executor
+        .for_each(0..2, |_| {
+            assert_ne!(thread::current().id(), caller);
+            Ok::<(), ()>(())
+        })
+        .expect("executor should remain usable");
+    assert!(outcome.is_success());
+    assert_eq!(outcome.completed_count(), 2);
 }
 
 #[test]
