@@ -223,7 +223,11 @@ impl Default for RayonBatchExecutor {
 impl BatchExecutor for RayonBatchExecutor {
     type SchedulerError = RayonBatchScheduleError;
 
-    /// Collects small or single-worker calls directly on the caller thread.
+    /// Executes counted callables and retains indexed successful outputs.
+    ///
+    /// Ordinary calls use Rayon workers. Small batches, single-worker
+    /// executors, and same-pool worker or source-producer reentry collect
+    /// outputs sequentially on the calling thread.
     ///
     /// # Parameters
     ///
@@ -233,16 +237,21 @@ impl BatchExecutor for RayonBatchExecutor {
     /// # Returns
     ///
     /// Indexed successful values with the final or policy-stopped outcome.
+    /// Failed tasks have no output at their index; successful outputs retain
+    /// their input indices.
     ///
     /// # Errors
     ///
-    /// Returns batch count, progress or scheduling failures with partial
-    /// values.
+    /// Returns count-validation, progress-reporting, or scheduling failures
+    /// with partial values. A count mismatch occurs when the source yields
+    /// fewer or more tasks than `count`.
     ///
     /// # Panics
     ///
-    /// Task panics are captured; source and synchronous reporter panics
-    /// propagate.
+    /// Task panics are captured in the outcome. Source conversion and
+    /// iteration panics, and synchronous reporter panics, propagate to the
+    /// caller. On the parallel path, panics from the scoped automatic running
+    /// reporter are returned as structured progress errors.
     fn call_with_count<C, R, E, I>(
         &self,
         tasks: I,
@@ -272,7 +281,11 @@ impl BatchExecutor for RayonBatchExecutor {
         call_with_executor(self, tasks, count)
     }
 
-    /// Executes the batch on Rayon workers when the batch is large enough.
+    /// Executes counted callables and retains indexed successful outputs.
+    ///
+    /// Ordinary calls use Rayon workers. Small batches, single-worker
+    /// executors, and same-pool worker or source-producer reentry collect
+    /// outputs sequentially on the calling thread.
     ///
     /// # Parameters
     ///
@@ -288,15 +301,17 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails, a
     /// count-mismatch variant when `tasks` yields fewer or more tasks than
-    /// `count`, or [`BatchExecutionError::IncompleteSchedule`] when an accepted
-    /// task is not completed by the Rayon scheduler.
+    /// `count`, [`BatchExecutionError::IncompleteSchedule`] when an accepted
+    /// task is not completed by the Rayon scheduler, or
+    /// [`BatchExecutionError::ScheduleFailed`] if the internal work channel
+    /// disconnects, with [`RayonBatchScheduleError`] as its source.
     ///
     /// # Panics
     ///
-    /// Panics from tasks are captured in the result. Panics from synchronous
-    /// progress callbacks are propagated to the caller; panics from the
-    /// scoped running reporter are returned as
-    /// [`qubit_batch::ProgressFailure`].
+    /// Task panics are captured in the outcome. Source conversion and
+    /// iteration panics, and synchronous reporter panics, propagate to the
+    /// caller. On the parallel path, panics from the scoped automatic running
+    /// reporter are returned as structured progress errors.
     fn execute_with_count<T, E, I>(
         &self,
         tasks: I,
