@@ -60,8 +60,8 @@ mod user_guide_en {}
 #[cfg(doctest)]
 mod user_guide_zh {}
 
-mod active_batch_guard;
 mod constants;
+mod internal;
 mod rayon_batch_executor;
 mod rayon_batch_executor_build_error;
 mod rayon_batch_executor_builder;

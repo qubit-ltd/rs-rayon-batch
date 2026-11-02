@@ -11,6 +11,7 @@ use std::time::Duration;
 use qubit_batch::TaskFailurePolicy;
 use qubit_progress::NoopReporter;
 use qubit_progress::Reporter;
+use rayon::ThreadPoolBuilder as RayonThreadPoolBuilder;
 
 use crate::RayonBatchExecutor;
 use crate::RayonBatchExecutorBuildError;
@@ -223,7 +224,7 @@ impl RayonBatchExecutorBuilder {
             return Err(RayonBatchExecutorBuildError::InvalidThreadNamePrefix);
         }
         let prefix = self.thread_name_prefix.clone();
-        let mut builder = rayon::ThreadPoolBuilder::new()
+        let mut builder = RayonThreadPoolBuilder::new()
             .num_threads(self.thread_count)
             .thread_name(move |index| format!("{prefix}-{index}"));
         if let Some(stack_size) = self.stack_size {

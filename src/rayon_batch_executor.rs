@@ -9,6 +9,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use crossbeam_channel::Receiver;
+use crossbeam_channel::bounded;
 use qubit_batch::BatchCallError;
 use qubit_batch::BatchCallResult;
 use qubit_batch::BatchExecutionError;
@@ -28,7 +30,7 @@ use rayon::ThreadPool as RayonThreadPool;
 use crate::RayonBatchExecutorBuildError;
 use crate::RayonBatchExecutorBuilder;
 use crate::RayonBatchScheduleError;
-use crate::active_batch_guard::ActiveBatchGuard;
+use crate::internal::ActiveBatchGuard;
 
 /// Parallel batch executor backed by a dedicated Rayon thread pool.
 ///
@@ -88,6 +90,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// The available CPU parallelism, or `1` if it cannot be detected.
+    #[must_use]
     #[inline]
     pub fn default_thread_count() -> usize {
         thread::available_parallelism().map(usize::from).unwrap_or(1)
@@ -349,7 +352,7 @@ impl BatchExecutor for RayonBatchExecutor {
         self.coordinator
             .execute_with_source(tasks, count, self.task_failure_policy, move |source, context| {
                 self.pool.in_place_scope_fifo(|scope| {
-                    let (work_sender, work_receiver) = crossbeam_channel::bounded(worker_count);
+                    let (work_sender, work_receiver) = bounded(worker_count);
                     for _ in 0..worker_count {
                         let worker_receiver = work_receiver.clone();
                         let worker_context = &context;
@@ -377,10 +380,8 @@ impl BatchExecutor for RayonBatchExecutor {
 ///
 /// * `work_receiver` - Clone of the crossbeam work receiver. Crossbeam clones
 ///   share the queue safely across Rayon workers.
-fn run_rayon_worker<T, E>(
-    work_receiver: crossbeam_channel::Receiver<ParallelBatchTask<T>>,
-    context: &ParallelBatchExecutionContext<E>,
-) where
+fn run_rayon_worker<T, E>(work_receiver: Receiver<ParallelBatchTask<T>>, context: &ParallelBatchExecutionContext<E>)
+where
     T: Runnable<E> + Send,
     E: Send,
 {
