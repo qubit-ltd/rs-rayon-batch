@@ -7,6 +7,7 @@
 // =============================================================================
 //! Callable outputs and thread placement across fallback and parallel paths.
 #![allow(clippy::result_large_err)]
+use std::cell::Cell;
 use std::io;
 use std::process::Command;
 use std::process::Stdio;
@@ -17,6 +18,7 @@ use std::time::Instant;
 
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
+use qubit_batch::BatchTaskError;
 use qubit_function::Callable;
 use qubit_progress::Event;
 use qubit_progress::Phase;
@@ -27,6 +29,51 @@ use qubit_rayon_batch::RayonBatchExecutor as Executor;
 #[derive(Debug)]
 struct NonClone {
     value: usize,
+}
+
+#[test]
+fn test_callable_fn_mut_send_not_sync_matrix() {
+    for (workers, threshold) in [(2, 0), (2, 100), (1, 0)] {
+        let executor = Executor::builder()
+            .thread_count(workers)
+            .sequential_threshold(threshold)
+            .build()
+            .expect("type-boundary executor should build");
+        let tasks = (0..8usize).map(|index| {
+            let state = Cell::new(index);
+            let mut calls = 0usize;
+            move || {
+                calls += 1;
+                state.set(state.get() + calls);
+                if index == 3 {
+                    Err(Cell::new(state.get()))
+                } else {
+                    Ok(Cell::new(state.get()))
+                }
+            }
+        });
+        let result = executor.call(tasks).expect("exact callable source");
+        let outcome = result.outcome();
+        assert_eq!(outcome.task_count(), 8);
+        assert_eq!(outcome.completed_count(), 8);
+        assert_eq!(outcome.succeeded_count(), 7);
+        assert_eq!(outcome.failed_count(), 1);
+        assert_eq!(outcome.panicked_count(), 0);
+        assert!(!outcome.is_success());
+        assert_eq!(outcome.failures().len(), 1);
+        assert_eq!(outcome.failures()[0].index(), 3);
+        match outcome.failures()[0].error() {
+            BatchTaskError::Failed(error) => assert_eq!(error.get(), 4),
+            error => panic!("expected callable error, got {error:?}"),
+        }
+        assert_eq!(
+            result.outputs().iter().map(|output| output.index()).collect::<Vec<_>>(),
+            vec![0, 1, 2, 4, 5, 6, 7]
+        );
+        for output in result.outputs() {
+            assert_eq!(output.value().get(), output.index() + 1);
+        }
+    }
 }
 
 #[test]
