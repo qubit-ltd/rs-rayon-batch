@@ -28,10 +28,15 @@ unchanged.
 
 `cargo bench --locked --bench call_fallback_bench` covers 0/1/32/100/101/1024
 items, scalar/String outputs, two workers with threshold 100 or 0, and one
-worker with threshold 0. Executors are constructed outside timing; standard
-scoped workers are still created inside each parallel call. Each point uses
-20 samples, 200 ms warmup, and 500 ms requested measurement. Untimed checks
-validate success and output counts. Result destruction is included.
+worker with threshold 0. Executors and their dedicated Rayon worker pools are
+constructed outside timing; worker threads are reused across calls. Each
+parallel call still includes scoped task scheduling and work-channel costs.
+This benchmark uses NoopReporter and creates no automatic reporter thread.
+With reporting enabled, a parallel batch may additionally create a scoped
+operating-system reporter thread outside the Rayon pool; that is separate from
+Rayon worker reuse. Each point uses 20 samples, 200 ms warmup, and 500 ms
+requested measurement. Untimed checks validate success and output counts.
+Result destruction is included.
 
 Selected means and 95% confidence intervals, in microseconds:
 
@@ -43,8 +48,9 @@ Selected means and 95% confidence intervals, in microseconds:
 | parallel / 1024 | 2057.423 [2036.004, 2079.127] | 2399.644 [2144.694, 2781.124] |
 
 These are sequentially collected local measurements, not a portable speedup
-promise. Worker creation and system scheduling make tiny forced-parallel calls
-especially noisy. Do not change the default threshold of 100 from these data.
+promise. Per-batch scheduling costs and system scheduling can affect tiny
+forced-parallel calls; these measurements do not isolate their individual
+contributions. Do not change the default threshold of 100 from these data.
 A new run emits Criterion raw estimates and sample data under
 `target/criterion`; this is the output location for new measurements, not a
 retained location for the historical samples. Use the same benchmark source
