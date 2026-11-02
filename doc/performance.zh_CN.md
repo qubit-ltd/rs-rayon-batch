@@ -112,3 +112,54 @@ Criterion 样本与估计已保留在本地目录
 测量无操作、细粒度CPU、重CPU、倾斜CPU和慢来源五组。本轮每组1024项、30个样本、预热
 200毫秒、请求测量500毫秒，重复三轮。`steady-callers-rayon` 组复用2/4个调用线程，计时仍含
 请求交接。完整矩阵另外覆盖32/100/101/1024/65536项和机器核心数允许的1/2/4个 worker。
+
+## 报告器开销对照（2026-11-02）
+
+本地实验比较 `NoopReporter` 路径与已启用的轻量 `CountingReporter`，测量的是端到端报告
+生命周期和基础设施成本；两者差值不等同于单独创建操作系统线程的成本。
+
+benchmark 源码基于提交
+`40d599e3989ff7920c218aa5a6c8f016bf040641`。测量时工作树还包含新增测试和 benchmark 改动
+（这两个文件合计增加156行）；benchmark 源文件 SHA-256 为
+`d7a49c6961c39efba1c1e1c97f98097a298f7093e405b1e4fe766a58128d7177`，`Cargo.lock` SHA-256 为
+`ac46a0543e12d089ae226a329783880c57542549d5c141e0f8114b2f3eeac735`。环境为 Rust 1.94.0 /
+LLVM 21.1.8、Linux x86_64 7.0.0-38-generic、Intel Core i5-9600K（6核），可用并行度为6。
+两种模式均使用2个 Rayon worker、阈值100、报告间隔5秒，以及默认 Continue 失败策略。
+
+单调用用例为100、101、1024项，30个样本、200毫秒预热、请求测量500毫秒。稳态调用线程
+helper 复用2或4个调用线程，使用30个样本及 Criterion 默认的3秒预热和5秒请求测量。执行器、
+线程池和报告器在计时区间外构造；每批次报告线程的生命周期仍包含在 API 调用计时内。稳态组
+计入请求交接时间。每一轮都按顺序测量两种模式，只改变 baseline 名称：
+
+```sh
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-1
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-2
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-3
+```
+
+下表为 Criterion `estimates.json` 中的均值估计及95%置信区间，单位为微秒。Criterion 原始
+数据曾作为本地实验产物生成于 `target/criterion/<组名>/<用例>/reporting-round-<轮次>/`，未作为
+样本提交到仓库。
+
+| 用例 | 第1轮均值 [95% CI] | 第2轮均值 [95% CI] | 第3轮均值 [95% CI] |
+| --- | ---: | ---: | ---: |
+| reporting-disabled / 100 | 82.355 [70.205, 95.116] | 45.903 [40.995, 51.341] | 82.442 [68.487, 98.767] |
+| reporting-disabled / 101 | 2575.427 [794.759, 5265.859] | 680.388 [664.279, 702.225] | 717.557 [704.302, 732.845] |
+| reporting-disabled / 1024 | 40729.013 [12116.166, 80253.485] | 7117.721 [6762.251, 7601.442] | 7088.033 [6211.107, 7865.550] |
+| reporting-enabled / 100 | 118.029 [103.691, 134.610] | 167.699 [127.005, 213.235] | 33.809 [33.765, 33.858] |
+| reporting-enabled / 101 | 98244.539 [69830.194, 129549.164] | 170943.114 [120583.297, 223595.447] | 397.273 [160.723, 728.499] |
+| reporting-enabled / 1024 | 143362.953 [68153.020, 247070.752] | 443469.157 [208957.485, 749421.079] | 1477.091 [1035.331, 1998.550] |
+| steady-callers-reporting-disabled / 2 | 159396.177 [116354.272, 205774.010] | 3899.164 [2424.711, 5651.181] | 817.536 [727.444, 964.829] |
+| steady-callers-reporting-disabled / 4 | 253270.066 [166887.852, 350385.758] | 25273.894 [3455.167, 62245.422] | 1834.421 [1731.757, 1939.352] |
+| steady-callers-reporting-enabled / 2 | 227573.458 [160273.752, 300244.301] | 401913.502 [264272.999, 559008.907] | 5319.069 [2408.108, 9061.631] |
+| steady-callers-reporting-enabled / 4 | 24744.774 [7807.463, 48325.367] | 602639.392 [357777.797, 898043.696] | 3828.232 [2939.602, 4916.129] |
+
+多项测量出现 severe outliers，Criterion 也提示30个样本无法在请求测量时间内完成。若干用例的
+三轮结果相差数个数量级，因此该主机上的数据无法支持稳定性能结论。本次运行确认启用报告的
+路径实际生效，且生命周期回调成对出现。不要求 Running 回调次数，也不以耗时阈值判断正确性。
+这些结果不足以支持修改默认阈值或报告架构。
+
+测量完成后，`align-ci.sh` 对 benchmark 源码只做了格式排版调整；最终对齐后的源文件 SHA-256 为
+`a1ccf12f020f61697d3348fd6e643b28a8ccdbafbb8c67ed637d2fb767867133`。对齐脚本清理了 `target`
+下的构建产物，但保留了 Criterion 输出；按验证后的清理流程会删除这些本地样本，以上估计则
+保存在本文中。

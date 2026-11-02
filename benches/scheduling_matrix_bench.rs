@@ -8,6 +8,9 @@
 //! Measures sequential, scoped-thread, and Rayon execution costs.
 
 use std::hint::black_box;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -19,6 +22,10 @@ use criterion::criterion_main;
 use qubit_batch::BatchExecutor;
 use qubit_batch::ParallelBatchExecutor;
 use qubit_batch::SequentialBatchExecutor;
+use qubit_progress::Event;
+use qubit_progress::Phase;
+use qubit_progress::Reporter;
+use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor;
 
 /// Performs repeatable CPU work with optional skew.
@@ -151,6 +158,98 @@ fn register_steady_callers<E: BatchExecutor>(criterion: &mut Criterion, label: &
     group.finish();
 }
 
+/// Counts lifecycle callbacks without IO or application work.
+#[derive(Default)]
+struct CountingReporter {
+    started: AtomicUsize,
+    terminal: AtomicUsize,
+}
+
+impl Reporter for CountingReporter {
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
+    fn report(&self, event: &Event) -> Result<(), ReporterError> {
+        match event.phase() {
+            Phase::Started => {
+                self.started.fetch_add(1, Ordering::Relaxed);
+            }
+            Phase::Succeeded | Phase::Failed => {
+                self.terminal.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+/// Verifies one reporting case outside the timed iteration.
+fn validate_reporting_case(executor: &RayonBatchExecutor, reporter: &CountingReporter, enabled: bool, count: usize) {
+    let started = reporter.started.load(Ordering::Relaxed);
+    let terminal = reporter.terminal.load(Ordering::Relaxed);
+    let outcome = executor
+        .for_each_with_count(0..count, count, |index| {
+            work(index, 64, true);
+            Ok::<(), ()>(())
+        })
+        .expect("reporting setup batch should succeed");
+    assert!(outcome.is_success());
+    assert_eq!(outcome.completed_count(), count);
+    let delta = usize::from(enabled);
+    assert_eq!(reporter.started.load(Ordering::Relaxed), started + delta);
+    assert_eq!(reporter.terminal.load(Ordering::Relaxed), terminal + delta);
+}
+
+/// Compares disabled and enabled reporting on one reused Rayon pool per mode.
+fn register_reporting_overhead(criterion: &mut Criterion) {
+    for enabled in [false, true] {
+        let mode = if enabled { "enabled" } else { "disabled" };
+        let reporter = Arc::new(CountingReporter::default());
+        let builder = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .sequential_threshold(100)
+            .report_interval(Duration::from_secs(5));
+        let executor = if enabled {
+            builder.reporter_arc(reporter.clone())
+        } else {
+            builder.no_reporter()
+        }
+        .build()
+        .expect("reporting benchmark executor should build");
+        let mut group = criterion.benchmark_group(format!("reporting-{mode}"));
+        group.sample_size(30);
+        group.warm_up_time(Duration::from_millis(200));
+        group.measurement_time(Duration::from_millis(500));
+        for count in [100usize, 101, 1024] {
+            group.bench_with_input(BenchmarkId::from_parameter(count), &count, |bencher, &count| {
+                validate_reporting_case(&executor, &reporter, enabled, count);
+                bencher.iter(|| {
+                    black_box(
+                        executor
+                            .for_each_with_count(0..count, count, |index| {
+                                work(index, 64, true);
+                                Ok::<(), ()>(())
+                            })
+                            .expect("measured reporting batch should succeed"),
+                    )
+                });
+                assert_eq!(
+                    reporter.started.load(Ordering::Relaxed),
+                    reporter.terminal.load(Ordering::Relaxed)
+                );
+            });
+        }
+        group.finish();
+        validate_reporting_case(&executor, &reporter, enabled, 1024);
+        register_steady_callers(criterion, &format!("reporting-{mode}"), &executor);
+        assert_eq!(
+            reporter.started.load(Ordering::Relaxed),
+            reporter.terminal.load(Ordering::Relaxed)
+        );
+    }
+}
+
 /// Registers the runtime comparison matrix.
 fn benchmarks(criterion: &mut Criterion) {
     let sequential = SequentialBatchExecutor::new();
@@ -176,6 +275,7 @@ fn benchmarks(criterion: &mut Criterion) {
         register_steady_callers(criterion, &format!("rayon-{threads}"), &rayon);
         register_gate(criterion, &format!("rayon-{threads}"), &rayon);
     }
+    register_reporting_overhead(criterion);
 }
 
 /// Selected gate workloads include a slow producer and skewed worker costs.

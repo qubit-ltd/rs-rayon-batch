@@ -142,3 +142,70 @@ source cases. Each case has 1024 items, 30 samples, 200 ms warmup and 500 ms
 requested measurement, and was repeated three times. The `steady-callers-rayon`
 groups reuse 2/4 caller threads; handoff remains timed. The full matrix also
 covers 32/100/101/1024/65536 items and 1/2/4 workers where the CPU permits.
+
+## Reporter overhead comparison (2026-11-02)
+
+This local experiment compares the end-to-end `NoopReporter` path with an
+enabled, lightweight `CountingReporter`. It measures report lifecycle and
+infrastructure costs together; the difference is not a measurement of OS
+thread creation alone.
+
+The benchmark source was based on commit
+`40d599e3989ff7920c218aa5a6c8f016bf040641`. At measurement time the worktree
+also contained the new test and benchmark changes (156 insertions in those two
+files); the benchmark source SHA-256 was
+`d7a49c6961c39efba1c1e1c97f98097a298f7093e405b1e4fe766a58128d7177`, and the
+`Cargo.lock` SHA-256 was
+`ac46a0543e12d089ae226a329783880c57542549d5c141e0f8114b2f3eeac735`. The
+environment was Rust 1.94.0 / LLVM 21.1.8 on Linux x86_64
+7.0.0-38-generic, with an Intel Core i5-9600K (6 cores) and available
+parallelism 6. Both modes used two Rayon workers, threshold 100, a 5-second
+report interval, and the default Continue failure policy.
+
+Single-call cases used 30 samples, 200 ms warmup and 500 ms requested
+measurement for 100, 101 and 1024 items. The steady-caller helper reused 2 or 4
+caller threads, used 30 samples and Criterion's default 3-second warmup and
+5-second requested measurement. Executor, pool, and reporter setup were outside
+the timed region; per-batch report-thread lifecycle remained inside the API
+call. Steady-caller request handoff remained timed. Every round ran both modes
+serially with this command (only the baseline name changed):
+
+```sh
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-1
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-2
+cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-callers-reporting-)' --save-baseline reporting-round-3
+```
+
+The table gives Criterion's mean estimate and 95% confidence interval in
+microseconds, read from each round's `estimates.json`. Raw Criterion data was
+generated locally under
+`target/criterion/<group>/<case>/reporting-round-<n>/`; it is not a checked-in
+sample set.
+
+| Case | Round 1 mean [95% CI] | Round 2 mean [95% CI] | Round 3 mean [95% CI] |
+| --- | ---: | ---: | ---: |
+| reporting-disabled / 100 | 82.355 [70.205, 95.116] | 45.903 [40.995, 51.341] | 82.442 [68.487, 98.767] |
+| reporting-disabled / 101 | 2575.427 [794.759, 5265.859] | 680.388 [664.279, 702.225] | 717.557 [704.302, 732.845] |
+| reporting-disabled / 1024 | 40729.013 [12116.166, 80253.485] | 7117.721 [6762.251, 7601.442] | 7088.033 [6211.107, 7865.550] |
+| reporting-enabled / 100 | 118.029 [103.691, 134.610] | 167.699 [127.005, 213.235] | 33.809 [33.765, 33.858] |
+| reporting-enabled / 101 | 98244.539 [69830.194, 129549.164] | 170943.114 [120583.297, 223595.447] | 397.273 [160.723, 728.499] |
+| reporting-enabled / 1024 | 143362.953 [68153.020, 247070.752] | 443469.157 [208957.485, 749421.079] | 1477.091 [1035.331, 1998.550] |
+| steady-callers-reporting-disabled / 2 | 159396.177 [116354.272, 205774.010] | 3899.164 [2424.711, 5651.181] | 817.536 [727.444, 964.829] |
+| steady-callers-reporting-disabled / 4 | 253270.066 [166887.852, 350385.758] | 25273.894 [3455.167, 62245.422] | 1834.421 [1731.757, 1939.352] |
+| steady-callers-reporting-enabled / 2 | 227573.458 [160273.752, 300244.301] | 401913.502 [264272.999, 559008.907] | 5319.069 [2408.108, 9061.631] |
+| steady-callers-reporting-enabled / 4 | 24744.774 [7807.463, 48325.367] | 602639.392 [357777.797, 898043.696] | 3828.232 [2939.602, 4916.129] |
+
+Several measurements had severe outliers and Criterion warned that 30 samples
+could not fit the requested measurement time. Round-to-round changes span
+orders of magnitude for several cases, so this host did not yield a stable
+performance conclusion. The run does verify that enabled reporting was active
+and lifecycle callbacks were paired. No Running callback count or elapsed-time
+threshold is a correctness condition. These results do not justify changing
+the default threshold or reporting architecture.
+
+After measurement, `align-ci.sh` made formatting-only changes to the benchmark
+source; the final aligned source SHA-256 is
+`a1ccf12f020f61697d3348fd6e643b28a8ccdbafbb8c67ed637d2fb767867133`. The
+alignment script cleared generated build artifacts but left Criterion output;
+the required post-validation cleanup removes those local samples, while the
+recorded estimates remain here.
