@@ -52,6 +52,14 @@
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[doc = include_str!("../doc/user_guide.md")]
+#[cfg(doctest)]
+mod user_guide_en {}
+
+#[doc = include_str!("../doc/user_guide.zh_CN.md")]
+#[cfg(doctest)]
+mod user_guide_zh {}
+
 mod active_batch_guard;
 mod constants;
 mod rayon_batch_executor;
