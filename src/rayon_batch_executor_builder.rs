@@ -32,6 +32,7 @@ use crate::RayonBatchExecutorBuildError;
 ///
 /// assert_eq!(executor.thread_count(), 2);
 /// ```
+#[must_use = "build or retain the configured executor builder"]
 pub struct RayonBatchExecutorBuilder {
     /// Number of Rayon worker threads to create.
     pub(crate) thread_count: usize,
@@ -60,7 +61,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn thread_count(mut self, thread_count: usize) -> Self {
         self.thread_count = thread_count;
@@ -77,7 +77,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn sequential_threshold(mut self, sequential_threshold: usize) -> Self {
         self.sequential_threshold = sequential_threshold;
@@ -95,7 +94,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn report_interval(mut self, report_interval: Duration) -> Self {
         self.report_interval = report_interval;
@@ -112,7 +110,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn reporter<R>(mut self, reporter: R) -> Self
     where
@@ -132,7 +129,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn reporter_arc(mut self, reporter: Arc<dyn Reporter>) -> Self {
         self.reporter = reporter;
@@ -144,7 +140,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn no_reporter(mut self) -> Self {
         self.reporter = Arc::new(NoopReporter);
@@ -163,7 +158,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub const fn task_failure_policy(mut self, task_failure_policy: TaskFailurePolicy) -> Self {
         self.task_failure_policy = task_failure_policy;
@@ -183,7 +177,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn thread_name_prefix(mut self, thread_name_prefix: impl Into<String>) -> Self {
         self.thread_name_prefix = thread_name_prefix.into();
@@ -201,7 +194,6 @@ impl RayonBatchExecutorBuilder {
     /// # Returns
     ///
     /// This builder for fluent configuration.
-    #[must_use]
     #[inline]
     pub fn stack_size(mut self, stack_size: usize) -> Self {
         self.stack_size = Some(stack_size);
