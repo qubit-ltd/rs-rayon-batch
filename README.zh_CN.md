@@ -62,27 +62,43 @@ qubit-rayon-batch = "0.9"
 
 ## 快速开始
 
+服务需要校验八条记录，保留有效记录的计算结果，并定位无效记录在原始输入中的位置。
+
 ```rust
 use qubit_batch::BatchExecutor;
 use qubit_rayon_batch::RayonBatchExecutor;
 
 let executor = RayonBatchExecutor::builder()
     .thread_count(4)
-    .sequential_threshold(1)
+    .sequential_threshold(0)
     .build()
-    .expect("rayon batch executor should be created");
+    .expect("rayon batch executor should build");
 
-let tasks = (0..8).map(|_| || Ok::<(), &'static str>(()));
-let result = executor
-    .execute_with_count(tasks, 8)
-    .expect("batch should succeed");
-
-assert_eq!(result.completed_count(), 8);
-assert_eq!(result.failure_count(), 0);
+let calls = (0..8usize).map(|value| move || {
+    if value == 3 {
+        Err::<usize, &'static str>("invalid record")
+    } else {
+        Ok(value * 2)
+    }
+});
+let result = executor.call(calls).expect("the range has an exact length");
+let outcome = result.outcome();
+assert_eq!(outcome.completed_count(), 8);
+assert_eq!(outcome.succeeded_count(), 7);
+assert_eq!(outcome.failed_count(), 1);
+assert!(!outcome.is_success());
+assert_eq!(outcome.failures()[0].index(), 3);
+assert_eq!(result.outputs().len(), 7);
+for output in result.outputs() {
+    assert_eq!(*output.value(), output.index() * 2);
+}
 ```
 
-有关执行契约、同池重入、结果内存和 chunk 重试边界，请阅读[中文用户手册](doc/user_guide.zh_CN.md)。
-英文读者可查看[English user guide](doc/user_guide.md)。
+`Ok(BatchCallResult)` 只表示批次返回了结果，不代表每条记录都校验通过。请检查 outcome，
+使用七条成功记录的计算结果，并通过失败下标 3 定位原始输入中的无效记录。这是入门校验示例；
+实际 CPU 密集型负载和顺序执行阈值应根据工作负载测量和调整。有关执行契约、失败策略、结果内存
+和 chunk 重试边界，请阅读[中文用户手册](doc/user_guide.zh_CN.md)。英文读者可查看
+[English user guide](doc/user_guide.md)，其中也链接了[进度与失败策略示例](examples/progress_and_failure_policy.rs)。
 
 ## 来源重入与终止
 

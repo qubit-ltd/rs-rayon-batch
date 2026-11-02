@@ -74,30 +74,48 @@ qubit-rayon-batch = "0.9"
 
 ## Quick Start
 
+A service validates eight records, keeps each valid record's computed value,
+and needs the original position of an invalid record.
+
 ```rust
 use qubit_batch::BatchExecutor;
 use qubit_rayon_batch::RayonBatchExecutor;
 
 let executor = RayonBatchExecutor::builder()
     .thread_count(4)
-    .sequential_threshold(1)
+    .sequential_threshold(0)
     .build()
-    .expect("rayon batch executor should be created");
+    .expect("rayon batch executor should build");
 
-let tasks = (0..8).map(|_| || Ok::<(), &'static str>(()));
-let result = executor
-    .execute_with_count(tasks, 8)
-    .expect("batch should succeed");
-
-assert_eq!(result.completed_count(), 8);
-assert_eq!(result.failure_count(), 0);
+let calls = (0..8usize).map(|value| move || {
+    if value == 3 {
+        Err::<usize, &'static str>("invalid record")
+    } else {
+        Ok(value * 2)
+    }
+});
+let result = executor.call(calls).expect("the range has an exact length");
+let outcome = result.outcome();
+assert_eq!(outcome.completed_count(), 8);
+assert_eq!(outcome.succeeded_count(), 7);
+assert_eq!(outcome.failed_count(), 1);
+assert!(!outcome.is_success());
+assert_eq!(outcome.failures()[0].index(), 3);
+assert_eq!(result.outputs().len(), 7);
+for output in result.outputs() {
+    assert_eq!(*output.value(), output.index() * 2);
+}
 ```
 
-See the [English user guide](doc/user_guide.md) for execution contracts,
-same-pool reentrancy, result memory, and chunk retry boundaries. The guide also
-links a [progress and failure policy example](examples/progress_and_failure_policy.rs)
-and covers reporters and shared-pool scheduling. Chinese
-readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
+`Ok(BatchCallResult)` means the batch returned a result, not that every record
+passed validation. Check the outcome, consume the seven successful computed
+values, and use failure index 3 to locate the invalid input record. This is an
+introductory validation example; measure real CPU-bound workloads and tune the
+sequential threshold for your workload. See the [English user guide](doc/user_guide.md)
+for execution contracts, failure policies, result memory, and chunk retry
+boundaries. It also links a
+[progress and failure policy example](examples/progress_and_failure_policy.rs).
+Chinese readers can use the [中文用户手册](doc/user_guide.zh_CN.md).
 
 ## Source reentrancy and termination
 
