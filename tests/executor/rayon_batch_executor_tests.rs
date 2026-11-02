@@ -771,35 +771,69 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
         );
         return;
     }
-    const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
-    let executor = RayonBatchExecutor::builder()
-        .thread_count(2)
-        .sequential_threshold(1)
-        .report_interval(Duration::ZERO)
-        .build()
-        .expect("rayon batch executor should build");
-    let completed = Arc::new(AtomicUsize::new(0));
-    let tasks = (0..3).map(|index| {
-        if index == 1 {
-            panic_any(PANIC_MESSAGE);
+    /// Records automatic running reports before releasing the source.
+    struct SourcePanicReporter {
+        gate: Arc<ProgressTestGate>,
+        recording: Arc<RecordingProgressReporter>,
+    }
+
+    impl Reporter for SourcePanicReporter {
+        fn report(&self, event: &Event) -> Result<(), ReporterError> {
+            self.recording.report(event)?;
+            if event.phase() == Phase::Running {
+                self.gate.release();
+            }
+            Ok(())
         }
-        TestTask::count_success(Arc::clone(&completed))
-    });
+    }
 
-    let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 3)))
-        .expect_err("iterator panic should be propagated");
+    const PANIC_MESSAGE: &str = "iterator panic in rayon batch";
+    for interval in [None, Some(Duration::ZERO), Some(Duration::from_millis(10))] {
+        let gate = Arc::new(ProgressTestGate::default());
+        let recording = Arc::new(RecordingProgressReporter::new());
+        let mut builder = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .sequential_threshold(1)
+            .report_interval(Duration::ZERO);
+        if let Some(interval) = interval {
+            builder = builder.report_interval(interval).reporter(SourcePanicReporter {
+                gate: Arc::clone(&gate),
+                recording: Arc::clone(&recording),
+            });
+        }
+        let executor = builder.build().expect("rayon batch executor should build");
+        let completed = Arc::new(AtomicUsize::new(0));
+        let tasks = (0..3).map(|index| {
+            if index == 1 {
+                if interval.is_some() {
+                    gate.wait();
+                }
+                panic_any(PANIC_MESSAGE);
+            }
+            TestTask::count_success(Arc::clone(&completed))
+        });
 
-    assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
-    assert_eq!(completed.load(Ordering::Acquire), 1);
-    let caller = thread::current().id();
-    let outcome = executor
-        .for_each(0..2, |_| {
-            assert_ne!(thread::current().id(), caller);
-            Ok::<(), ()>(())
-        })
-        .expect("executor should remain usable");
-    assert!(outcome.is_success());
-    assert_eq!(outcome.completed_count(), 2);
+        let payload = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(tasks, 3)))
+            .expect_err("iterator panic should be propagated");
+        assert_eq!(panic_payload_message(payload.as_ref()), Some(PANIC_MESSAGE));
+        assert_eq!(completed.load(Ordering::Acquire), 1, "mode: {interval:?}");
+        if interval.is_some() {
+            assert!(
+                recording.events().iter().any(|event| event.phase() == Phase::Running),
+                "automatic reporter must run before source panic: {interval:?}"
+            );
+        }
+
+        let caller = thread::current().id();
+        let outcome = executor
+            .for_each(0..2, |_| {
+                assert_ne!(thread::current().id(), caller);
+                Ok::<(), ()>(())
+            })
+            .expect("executor should remain usable");
+        assert!(outcome.is_success(), "mode: {interval:?}");
+        assert_eq!(outcome.completed_count(), 2);
+    }
 }
 
 #[test]
