@@ -350,6 +350,63 @@ fn test_rayon_batch_executor_call_collects_values_by_index() {
 }
 
 #[test]
+fn test_rayon_batch_executor_call_orders_sparse_outputs_after_out_of_order_completion() {
+    let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
+        .build()
+        .expect("rayon batch executor should build");
+    let (release_sender, release_receiver) = bounded::<()>(1);
+    let tasks = (0..4).map(move |index| {
+        let release_sender = release_sender.clone();
+        let release_receiver = release_receiver.clone();
+        move || match index {
+            0 => {
+                release_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("task 3 should release task 0 after task 1 output is collected");
+                Ok::<i32, &'static str>(10)
+            }
+            1 => Ok(20),
+            2 => Err("expected failure"),
+            3 => {
+                // With two workers, task 1's output is collected before this task starts.
+                release_sender
+                    .send_timeout((), Duration::from_secs(5))
+                    .expect("task 3 should release task 0");
+                Ok(40)
+            }
+            _ => unreachable!(),
+        }
+    });
+
+    let result = executor
+        .call_with_count(tasks, 4)
+        .expect("task failures should stay in the batch result");
+    let outcome = result.outcome();
+    assert_eq!(outcome.task_count(), 4);
+    assert_eq!(outcome.completed_count(), 4);
+    assert_eq!(outcome.succeeded_count(), 3);
+    assert_eq!(outcome.failed_count(), 1);
+    assert_eq!(outcome.panicked_count(), 0);
+    assert!(!outcome.is_success());
+    assert_eq!(
+        result
+            .outputs()
+            .iter()
+            .map(|output| (output.index(), *output.value()))
+            .collect::<Vec<_>>(),
+        vec![(0, 10), (1, 20), (3, 40)]
+    );
+    assert_eq!(outcome.failures().len(), 1);
+    assert_eq!(outcome.failures()[0].index(), 2);
+    assert_eq!(
+        outcome.failures()[0].error(),
+        &BatchTaskError::Failed("expected failure")
+    );
+}
+
+#[test]
 fn test_rayon_batch_executor_call_reports_count_mismatches() {
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
