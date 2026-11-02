@@ -23,8 +23,10 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use crossbeam_channel::bounded;
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
+use qubit_batch::BatchTaskError;
 use qubit_batch::ProgressFailure;
 use qubit_function::Runnable;
 use qubit_progress::AutoReporterError;
@@ -434,18 +436,43 @@ fn test_rayon_batch_executor_orders_failures_by_task_index() {
         .sequential_threshold(1)
         .build()
         .expect("rayon batch executor should build");
-    let tasks = vec![
-        TestTask::fail_after_sleep("slow failure", Duration::from_millis(50)),
-        TestTask::fail("fast failure"),
-    ];
+    let (release_sender, release_receiver) = bounded::<()>(1);
+    let tasks = (0..3).map(move |index| {
+        let release_sender = release_sender.clone();
+        let release_receiver = release_receiver.clone();
+        move || match index {
+            0 => {
+                release_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("task 2 should release task 0 after task 1 is recorded");
+                Err::<(), &'static str>("slow failure")
+            }
+            1 => Err("fast failure"),
+            2 => {
+                // Task 2 runs on the idle worker only after task 1's execute_task returns.
+                release_sender
+                    .send_timeout((), Duration::from_secs(5))
+                    .expect("task 2 should release task 0");
+                Ok(())
+            }
+            _ => unreachable!(),
+        }
+    });
 
     let result = executor
-        .execute_with_count(tasks, 2)
+        .execute_with_count(tasks, 3)
         .expect("task failures should stay in the batch result");
 
+    assert_eq!(result.task_count(), 3);
+    assert_eq!(result.completed_count(), 3);
+    assert_eq!(result.succeeded_count(), 1);
+    assert_eq!(result.failed_count(), 2);
+    assert_eq!(result.panicked_count(), 0);
     assert_eq!(result.failures().len(), 2);
     assert_eq!(result.failures()[0].index(), 0);
     assert_eq!(result.failures()[1].index(), 1);
+    assert_eq!(result.failures()[0].error(), &BatchTaskError::Failed("slow failure"));
+    assert_eq!(result.failures()[1].error(), &BatchTaskError::Failed("fast failure"));
 }
 
 #[test]
