@@ -142,6 +142,8 @@ impl Reporter for CountingReporter {
 fn main() {
     let reporter = Arc::new(CountingReporter::default());
     let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
         .reporter_arc(reporter.clone())
         .report_interval(Duration::from_millis(10))
         .build()
@@ -163,8 +165,9 @@ fn main() {
 ```
 
 `Started` 和终态 `Succeeded` 或 `Failed` 描述批次。`Running` 是可选更新，可能一次也不产生，
-尤其是短批次。执行器 clone 共享 reporter，因此并发批次的回调事件可能交错；事件不提供应用级
-批次关联。应用负责关联、指标存储、日志和重试决策。上面的计数 reporter 仅用于入门演示，不能
+尤其是短批次。两个 worker 和阈值 0 会让非空批次走并行路径。短批次仍可能没有 `Running` 事件；
+生产参数应基于实际测量选择。执行器 clone 共享 reporter，因此并发批次的回调事件可能交错；事件
+不提供应用级批次关联。应用负责关联、指标存储、日志和重试决策。上面的计数 reporter 仅用于入门演示，不能
 替代生产监控。回调不应等待依赖同一线程池的工作：来源阻塞时，同池 worker
 可能持续被占用，无法保证其他批次及时获得进展。
 
@@ -172,7 +175,8 @@ fn main() {
 
 默认策略是 `TaskFailurePolicy::Continue`。`StopOnFirstFailure` 在一次失败后停止接纳新工作；
 `StopAfterFailures(NonZeroUsize)` 在达到配置阈值后停止接纳。任务返回错误和被捕获的任务
-panic 都计为失败。这些策略是协作式的：返回前会排空已接纳任务，最终失败数可能超过阈值。
+panic 都计为失败。这些策略是协作式的：返回前会排空已接纳任务，最终失败数可能超过阈值，
+`completed_count()` 也可能等于声明的任务数。
 即使 `call` 返回 `Ok`，也要检查 outcome：
 
 ```rust
@@ -188,6 +192,8 @@ fn main() {
         TaskFailurePolicy::StopAfterFailures(limit),
     ] {
         let executor = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .sequential_threshold(0)
             .task_failure_policy(policy)
             .build()
             .expect("executor should build");
@@ -197,11 +203,13 @@ fn main() {
         let result = executor.call(calls).expect("task errors are in the outcome");
         let outcome = result.outcome();
         assert!(!outcome.is_success());
+        assert!(outcome.completed_count() <= outcome.task_count());
         assert_eq!(result.outputs().len(), outcome.succeeded_count());
         match policy {
             TaskFailurePolicy::Continue => {
                 assert_eq!(outcome.termination(), BatchTermination::Finished);
                 assert_eq!(outcome.failed_count(), 4);
+                assert_eq!(outcome.completed_count(), 16);
             }
             TaskFailurePolicy::StopOnFirstFailure => assert!(outcome.failure_count() >= 1),
             TaskFailurePolicy::StopAfterFailures(limit) => {
@@ -215,6 +223,10 @@ fn main() {
     }
 }
 ```
+
+两个 worker 和阈值 0 会让这些非空批次走并行路径。短批次可能没有 `Running` 事件；生产参数应
+基于实际测量选择。停止策略会在返回前排空已接纳的工作，因此失败数可能超过阈值，完成数也可能
+达到声明的任务数。
 
 [进度与失败策略可运行示例](../examples/progress_and_failure_policy.rs)展示三种策略，并检查保留的
 输出下标和值。批次级错误也可能附带部分 outcome 和输出；不要将它们视为成功完成的批次。
@@ -386,8 +398,12 @@ trait 的 `Send` 要求与稀疏、有序的结果契约保持不变。通用并
 且不保证返回结构化部分结果。Callable 适配器在正常完成时于捕获边界内析构已消费的 callable，
 这不意味着裸 Runnable 的析构也具有相同保证。导致进程终止的 panic 无法被捕获。输入迭代器
 panic 和同步 `Started`/终态进度回调 panic 会传播给调用者。reporter 返回的错误会成为批次级
-进度错误；scoped 自动 running reporter 的 panic 也会包装为批次级进度错误。调度失败或数量不匹配同样会保留错误发生前已经
-统计到的工作。
+进度错误；正在运行的 scoped 自动 reporter 回调 panic 也会包装为批次级进度错误。并行路径启用
+reporter 时，每个批次可能额外需要一个 Rayon 工作线程池之外的 scoped 操作系统线程。
+`thread_count`、`thread_name_prefix` 和 `stack_size` 配置的是 Rayon worker，不控制这个报告线程。
+`NoopReporter` 会禁用报告且不会创建该线程。线程池构建成功后，后续报告线程创建仍可能失败并
+导致 panic，且不会返回结构化批次错误或部分结果。这与正在运行的 reporter callback 内部 panic
+不同，后者会转换为进度错误。调度失败或数量不匹配同样会保留错误发生前已经统计到的工作。
 
 ## 排障
 

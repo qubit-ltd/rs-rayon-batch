@@ -159,6 +159,8 @@ impl Reporter for CountingReporter {
 fn main() {
     let reporter = Arc::new(CountingReporter::default());
     let executor = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .sequential_threshold(0)
         .reporter_arc(reporter.clone())
         .report_interval(Duration::from_millis(10))
         .build()
@@ -181,6 +183,9 @@ fn main() {
 
 `Started` and a terminal `Succeeded` or `Failed` event describe the batch.
 `Running` is optional and may occur zero times, especially for a short batch.
+Two workers and a zero sequential threshold make non-empty batches use the
+parallel path. Short batches may still produce no `Running` event. Choose
+production settings from measurements.
 Clones share the reporter, so callbacks from concurrent batches may interleave.
 Events do not provide application-level batch correlation; the application
 owns correlation, metric storage, logging, and retry decisions. The reporter
@@ -194,7 +199,8 @@ The default is `TaskFailurePolicy::Continue`. `StopOnFirstFailure` stops
 admitting more work after a failure; `StopAfterFailures(NonZeroUsize)` does so
 after the configured threshold. A task error and a captured task panic both
 count as failures. These policies are cooperative: accepted tasks are drained
-before return, and the final failure count can exceed the threshold. Always
+before return; failures can exceed the threshold and `completed_count()` can
+equal the declared task count. Always
 inspect the outcome even when `call` returns `Ok`:
 
 ```rust
@@ -210,6 +216,8 @@ fn main() {
         TaskFailurePolicy::StopAfterFailures(limit),
     ] {
         let executor = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .sequential_threshold(0)
             .task_failure_policy(policy)
             .build()
             .expect("executor should build");
@@ -219,11 +227,13 @@ fn main() {
         let result = executor.call(calls).expect("task errors are in the outcome");
         let outcome = result.outcome();
         assert!(!outcome.is_success());
+        assert!(outcome.completed_count() <= outcome.task_count());
         assert_eq!(result.outputs().len(), outcome.succeeded_count());
         match policy {
             TaskFailurePolicy::Continue => {
                 assert_eq!(outcome.termination(), BatchTermination::Finished);
                 assert_eq!(outcome.failed_count(), 4);
+                assert_eq!(outcome.completed_count(), 16);
             }
             TaskFailurePolicy::StopOnFirstFailure => assert!(outcome.failure_count() >= 1),
             TaskFailurePolicy::StopAfterFailures(limit) => {
@@ -237,6 +247,12 @@ fn main() {
     }
 }
 ```
+
+Two workers and a zero sequential threshold make these non-empty batches use
+the parallel path. Short batches may not emit `Running`; choose production
+settings from measurements. Stop policies drain accepted work before returning,
+so failures can exceed the threshold and completion can reach the declared task
+count.
 
 The [progress and failure policy example](../examples/progress_and_failure_policy.rs)
 shows all three policies and validates retained output indexes and values. A
@@ -434,10 +450,17 @@ the consumed callable within the captured execution boundary during normal
 completion; this does not extend the runnable destruction guarantee.
 Process-aborting panics cannot be captured. Iterator panics and synchronous
 `Started`/terminal reporter panics propagate to the caller. Reporter-returned
-errors are batch-level progress errors. A panic from the scoped automatic
-running reporter is also represented as a batch-level progress error. A scheduler
-failure or count mismatch also carries the work that was accounted for before
-the error.
+errors are batch-level progress errors. A panic from a running scoped automatic
+reporter callback is also represented as a batch-level progress error. An enabled
+reporter on the parallel path may require one additional scoped operating-system
+thread per batch, outside the Rayon worker pool. The `thread_count`,
+`thread_name_prefix`, and `stack_size` settings configure Rayon workers, not this
+reporter thread. `NoopReporter` disables reporting and does not create this
+thread. Pool construction can succeed while later reporter thread creation
+fails; that failure may panic without a structured batch error or partial
+result. This differs from a panic inside a running reporter callback, which is
+represented as a progress error. A scheduler failure or count mismatch also
+carries the work that was accounted for before the error.
 
 ## Troubleshooting
 

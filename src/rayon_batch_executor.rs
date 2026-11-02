@@ -251,7 +251,11 @@ impl BatchExecutor for RayonBatchExecutor {
     /// Task panics are captured in the outcome. Source conversion and
     /// iteration panics, and synchronous reporter panics, propagate to the
     /// caller. On the parallel path, panics from the scoped automatic running
-    /// reporter are returned as structured progress errors.
+    /// reporter are returned as structured progress errors. When progress
+    /// reporting is enabled on the parallel path, creating the scoped
+    /// automatic reporter thread may also panic if the operating system cannot
+    /// create it. This creation failure is not converted into a batch error
+    /// or a structured partial result.
     fn call_with_count<C, R, E, I>(
         &self,
         tasks: I,
@@ -313,7 +317,11 @@ impl BatchExecutor for RayonBatchExecutor {
     /// be converted into task failures. Source conversion and iteration
     /// panics, and synchronous reporter panics, propagate to the caller. On
     /// the parallel path, panics from the scoped automatic running reporter
-    /// are returned as structured progress errors.
+    /// are returned as structured progress errors. When progress reporting is
+    /// enabled on the parallel path, creating the scoped automatic reporter
+    /// thread may also panic if the operating system cannot create it. This
+    /// creation failure is not converted into a batch error or a structured
+    /// partial result.
     fn execute_with_count<T, E, I>(
         &self,
         tasks: I,
