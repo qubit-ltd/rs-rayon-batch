@@ -7,6 +7,8 @@
 // =============================================================================
 //! Tests for [`RayonBatchExecutorBuildError`](qubit_rayon_batch::RayonBatchExecutorBuildError).
 
+use std::error::Error;
+
 use qubit_rayon_batch::RayonBatchExecutor;
 use qubit_rayon_batch::RayonBatchExecutorBuildError;
 
@@ -38,4 +40,14 @@ fn test_rayon_batch_executor_build_error_formats_zero_stack_size() {
         error.to_string(),
         "rayon batch executor worker stack size must be greater than zero"
     );
+}
+
+#[test]
+fn test_thread_name_prefix_error_formats_and_has_no_source() {
+    let error = RayonBatchExecutorBuildError::InvalidThreadNamePrefix;
+    assert_eq!(
+        error.to_string(),
+        "rayon batch executor thread name prefix must not contain NUL bytes"
+    );
+    assert!(error.source().is_none());
 }

@@ -29,6 +29,10 @@ pub enum RayonBatchExecutorBuildError {
     #[error("rayon batch executor worker stack size must be greater than zero")]
     ZeroStackSize,
 
+    /// The configured worker-thread name prefix contains a NUL byte.
+    #[error("rayon batch executor thread name prefix must not contain NUL bytes")]
+    InvalidThreadNamePrefix,
+
     /// Rayon rejected the underlying thread-pool configuration.
     #[error("failed to build rayon batch executor: {source}")]
     BuildFailed {

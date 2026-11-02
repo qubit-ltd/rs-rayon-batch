@@ -50,7 +50,8 @@ pub struct RayonBatchExecutorBuilder {
 }
 
 impl RayonBatchExecutorBuilder {
-    /// Sets the Rayon worker-thread count.
+    /// Sets the Rayon worker-thread count. The default is the available
+    /// parallelism, or 1 if it cannot be detected.
     ///
     /// # Parameters
     ///
@@ -66,7 +67,7 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the sequential fallback threshold.
+    /// Sets the sequential fallback threshold. The default is 100.
     ///
     /// # Parameters
     ///
@@ -83,7 +84,7 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the progress-report interval.
+    /// Sets the progress-report interval. The default is 5 seconds.
     ///
     /// # Parameters
     ///
@@ -101,7 +102,8 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the progress reporter used by the executor.
+    /// Sets the progress reporter used by the executor. The default is
+    /// [`NoopReporter`].
     ///
     /// # Parameters
     ///
@@ -120,7 +122,8 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the progress reporter used by the executor.
+    /// Sets the progress reporter used by the executor. The default is
+    /// [`NoopReporter`].
     ///
     /// # Parameters
     ///
@@ -151,6 +154,8 @@ impl RayonBatchExecutorBuilder {
     /// Sets the policy that controls Rayon source acceptance after task
     /// errors or captured panics.
     ///
+    /// The default is [`TaskFailurePolicy::Continue`].
+    ///
     /// # Parameters
     ///
     /// * `task_failure_policy` - Policy applied after a worker task fails.
@@ -165,7 +170,11 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the Rayon worker-thread name prefix.
+    /// Sets the Rayon worker-thread name prefix. The default is
+    /// `qubit-rayon-batch`; worker names append `-<index>`. Empty and Unicode
+    /// prefixes are allowed. A prefix containing NUL is rejected by
+    /// [`build`](Self::build) with
+    /// [`RayonBatchExecutorBuildError::InvalidThreadNamePrefix`].
     ///
     /// # Parameters
     ///
@@ -181,7 +190,9 @@ impl RayonBatchExecutorBuilder {
         self
     }
 
-    /// Sets the Rayon worker-thread stack size.
+    /// Sets the Rayon worker-thread stack size. By default, the stack size is
+    /// unspecified and Rayon/platform defaults apply. The actual size is
+    /// platform-dependent; zero is rejected by [`build`](Self::build).
     ///
     /// # Parameters
     ///
@@ -205,8 +216,9 @@ impl RayonBatchExecutorBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`RayonBatchExecutorBuildError`] when the supplied
-    /// configuration is invalid or Rayon rejects it.
+    /// Returns [`RayonBatchExecutorBuildError`] when the thread count or stack
+    /// size is zero, the thread-name prefix contains NUL, or Rayon rejects the
+    /// configuration. These validations occur in that order.
     #[inline]
     pub fn build(self) -> Result<RayonBatchExecutor, RayonBatchExecutorBuildError> {
         if self.thread_count == 0 {
@@ -214,6 +226,9 @@ impl RayonBatchExecutorBuilder {
         }
         if self.stack_size == Some(0) {
             return Err(RayonBatchExecutorBuildError::ZeroStackSize);
+        }
+        if self.thread_name_prefix.contains('\0') {
+            return Err(RayonBatchExecutorBuildError::InvalidThreadNamePrefix);
         }
         let prefix = self.thread_name_prefix.clone();
         let mut builder = rayon::ThreadPoolBuilder::new()

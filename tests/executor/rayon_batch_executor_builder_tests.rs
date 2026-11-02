@@ -15,9 +15,55 @@ use qubit_batch::BatchExecutor;
 use qubit_batch::TaskFailurePolicy;
 use qubit_progress::Phase;
 use qubit_rayon_batch::RayonBatchExecutor;
+use qubit_rayon_batch::RayonBatchExecutorBuildError;
 
 use crate::support::RecordingProgressReporter;
 use crate::support::TestTask;
+
+#[test]
+fn test_thread_name_prefix_rejects_nul() {
+    for prefix in ["\0worker", "bad\0worker", "worker\0"] {
+        let result = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .thread_name_prefix(prefix)
+            .build();
+        assert!(matches!(
+            result,
+            Err(RayonBatchExecutorBuildError::InvalidThreadNamePrefix)
+        ));
+    }
+}
+
+#[test]
+fn test_thread_name_prefix_preserves_existing_validation_priority() {
+    let zero_threads = RayonBatchExecutor::builder()
+        .thread_count(0)
+        .stack_size(0)
+        .thread_name_prefix("bad\0worker")
+        .build();
+    assert!(matches!(
+        zero_threads,
+        Err(RayonBatchExecutorBuildError::ZeroThreadCount)
+    ));
+    let zero_stack = RayonBatchExecutor::builder()
+        .thread_count(2)
+        .stack_size(0)
+        .thread_name_prefix("bad\0worker")
+        .build();
+    assert!(matches!(zero_stack, Err(RayonBatchExecutorBuildError::ZeroStackSize)));
+}
+
+#[test]
+fn test_thread_name_prefix_accepts_empty_and_unicode() {
+    for prefix in ["", "批处理"] {
+        let executor = RayonBatchExecutor::builder()
+            .thread_count(2)
+            .thread_name_prefix(prefix)
+            .build()
+            .expect("a prefix without NUL must build");
+        assert_eq!(executor.thread_count(), 2);
+    }
+}
 
 #[test]
 fn test_rayon_batch_executor_builder_applies_custom_execution_settings() {
