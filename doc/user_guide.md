@@ -93,6 +93,19 @@ batches. Calls still run sequentially on the calling thread when the executor
 has one worker, when called from its own Rayon pool, or when a lazy-source
 producer reenters the same pool.
 
+| Setting | Default | Contract |
+| --- | --- | --- |
+| `thread_count` | Available parallelism, or 1 if detection fails | Must be positive; one worker selects caller-thread sequential execution. |
+| `sequential_threshold` | 100 | Declared counts at or below this value run sequentially; zero disables only the non-empty batch-size fallback. |
+| `report_interval` | 5 seconds | Zero reports at implementation-defined running progress points; no wall-clock heartbeat guarantee. |
+| `reporter` | `NoopReporter` | `reporter_arc` shares the configured reporter; `no_reporter` resets it. |
+| `task_failure_policy` | `TaskFailurePolicy::Continue` | Stop policies are cooperative; accepted tasks drain before return. |
+| `thread_name_prefix` | `qubit-rayon-batch` | Names append `-<index>`; empty and Unicode prefixes are allowed; NUL causes `InvalidThreadNamePrefix` at build time. |
+| `stack_size` | Unspecified | Uses Rayon/platform defaults; explicit zero is rejected; actual size is platform-dependent. |
+
+One worker and same-pool worker/source reentry still select sequential execution
+even when `sequential_threshold` is zero.
+
 `execute` and `execute_with_count` accept `Runnable` tasks. `call` and
 `call_with_count` adapt `Callable` tasks and collect successful values. The
 exact-size forms derive the declared count from the iterator; use a

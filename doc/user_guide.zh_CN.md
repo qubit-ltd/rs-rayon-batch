@@ -83,6 +83,18 @@ assert_eq!(result.outputs().len(), 7);
 顺序回退；单 worker、同池 worker 调用和惰性来源生产线程在同池重入时，仍会在当前调用线程
 顺序执行。
 
+| 配置 | 默认值 | 约定 |
+| --- | --- | --- |
+| `thread_count` | 可用并行度；检测失败时为 1 | 必须大于 0；一个 worker 时在调用线程顺序执行。 |
+| `sequential_threshold` | 100 | 声明数量小于等于此值时顺序执行；0 仅关闭非空批次按大小触发的回退。 |
+| `report_interval` | 5 秒 | 设为 0 时在实现定义的 running 进度点报告；不保证按墙上时间定期心跳。 |
+| `reporter` | `NoopReporter` | `reporter_arc` 共享配置的 reporter；`no_reporter` 将其重置。 |
+| `task_failure_policy` | `TaskFailurePolicy::Continue` | 停止策略是协作式的；返回前会排空已接纳任务。 |
+| `thread_name_prefix` | `qubit-rayon-batch` | worker 名称追加 `-<index>`；允许空串和 Unicode；含 NUL 时 build 返回 `InvalidThreadNamePrefix`。 |
+| `stack_size` | 未显式设置 | 使用 Rayon/平台默认值；显式设为 0 会被拒绝；实际大小取决于平台。 |
+
+即使 `sequential_threshold` 为 0，一个 worker 以及同池 worker/来源重入仍会顺序执行。
+
 `execute` 与 `execute_with_count` 接收 `Runnable` 任务。`call` 与 `call_with_count` 接收
 `Callable`，并收集成功返回值。Exact-size 版本从迭代器推导声明数量；如果数量来自数据库
 或其他独立服务边界，应使用 `*_with_count` 并把该数量视为边界契约。输入来源只消费一次，
