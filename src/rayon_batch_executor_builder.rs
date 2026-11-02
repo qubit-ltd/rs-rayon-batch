@@ -187,6 +187,11 @@ impl RayonBatchExecutorBuilder {
     /// Sets the Rayon worker-thread stack size. By default, the stack size is
     /// unspecified and Rayon/platform defaults apply. The actual size is
     /// platform-dependent; zero is rejected by [`build`](Self::build).
+    /// This setting configures Rayon workers only; it does not enlarge the
+    /// calling thread's stack. Small-batch and single-worker fallbacks use the
+    /// calling thread's existing stack. Same-pool reentry also uses the current
+    /// thread's existing stack, including the current worker stack when called
+    /// from a worker.
     ///
     /// # Parameters
     ///

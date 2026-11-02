@@ -101,7 +101,7 @@ producer reenters the same pool.
 | `reporter` | `NoopReporter` | `reporter_arc` shares the configured reporter; `no_reporter` resets it. |
 | `task_failure_policy` | `TaskFailurePolicy::Continue` | Stop policies are cooperative; accepted tasks drain before return. |
 | `thread_name_prefix` | `qubit-rayon-batch` | Names append `-<index>`; empty and Unicode prefixes are allowed; NUL causes `InvalidThreadNamePrefix` at build time. |
-| `stack_size` | Unspecified | Uses Rayon/platform defaults; explicit zero is rejected; actual size is platform-dependent. |
+| `stack_size` | Unspecified | Uses Rayon/platform defaults; explicit zero is rejected; actual size is platform-dependent. Applies only to Rayon workers; caller-thread fallback uses the caller's existing stack, and worker reentry uses the current worker's existing stack. |
 
 One worker and same-pool worker/source reentry still select sequential execution
 even when `sequential_threshold` is zero.

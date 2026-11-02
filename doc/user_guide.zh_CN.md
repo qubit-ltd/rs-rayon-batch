@@ -91,7 +91,7 @@ assert_eq!(result.outputs().len(), 7);
 | `reporter` | `NoopReporter` | `reporter_arc` 共享配置的 reporter；`no_reporter` 将其重置。 |
 | `task_failure_policy` | `TaskFailurePolicy::Continue` | 停止策略是协作式的；返回前会排空已接纳任务。 |
 | `thread_name_prefix` | `qubit-rayon-batch` | worker 名称追加 `-<index>`；允许空串和 Unicode；含 NUL 时 build 返回 `InvalidThreadNamePrefix`。 |
-| `stack_size` | 未显式设置 | 使用 Rayon/平台默认值；显式设为 0 会被拒绝；实际大小取决于平台。 |
+| `stack_size` | 未显式设置 | 使用 Rayon/平台默认值；显式设为 0 会被拒绝；实际大小取决于平台。只配置 Rayon worker；调用线程上的顺序回退使用调用线程已有栈，从 worker 重入时使用当前 worker 已有栈。 |
 
 即使 `sequential_threshold` 为 0，一个 worker 以及同池 worker/来源重入仍会顺序执行。
 

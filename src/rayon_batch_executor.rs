@@ -42,6 +42,15 @@ use crate::internal::ActiveBatchGuard;
 /// batch-size fallback for non-empty batches. Clones share the same Rayon pool
 /// and executor configuration.
 ///
+/// # Execution limitations
+///
+/// Direct same-pool reentry runs sequentially. This protection does not
+/// guarantee progress for synchronous cycles across distinct pools, such as
+/// A -> B -> A. Move orchestration outside worker pools or remove the cyclic
+/// dependency. See the
+/// [English user guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.md)
+/// and [Chinese user guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.zh_CN.md).
+///
 /// # Examples
 ///
 /// ```rust
@@ -203,6 +212,21 @@ impl RayonBatchExecutor {
     pub fn reporter(&self) -> &Arc<dyn Reporter> {
         self.coordinator.reporter()
     }
+
+    /// Creates the sequential fallback with this executor's batch settings.
+    ///
+    /// # Returns
+    ///
+    /// A sequential executor sharing the reporter, interval, and failure
+    /// policy.
+    #[inline]
+    fn sequential_executor(&self) -> SequentialBatchExecutor {
+        SequentialBatchExecutor::builder()
+            .report_interval(self.coordinator.report_interval())
+            .reporter_arc(Arc::clone(self.coordinator.reporter()))
+            .task_failure_policy(self.task_failure_policy)
+            .build()
+    }
 }
 
 impl Default for RayonBatchExecutor {
@@ -273,11 +297,7 @@ impl BatchExecutor for RayonBatchExecutor {
         let active_guard = ActiveBatchGuard::enter(&self.pool);
         let reentrant = active_guard.is_none() || self.pool.current_thread_index().is_some();
         if reentrant || count <= self.sequential_threshold || self.thread_count <= 1 {
-            let sequential = SequentialBatchExecutor::builder()
-                .report_interval(self.coordinator.report_interval())
-                .reporter_arc(Arc::clone(self.coordinator.reporter()))
-                .task_failure_policy(self.task_failure_policy)
-                .build();
+            let sequential = self.sequential_executor();
             return sequential
                 .call_with_count(tasks, count)
                 .map_err(|error| error.map_scheduler_error(|never| match never {}));
@@ -338,11 +358,7 @@ impl BatchExecutor for RayonBatchExecutor {
         let active_guard = ActiveBatchGuard::enter(&self.pool);
         let reentrant = active_guard.is_none() || self.pool.current_thread_index().is_some();
         if reentrant || count <= self.sequential_threshold || self.thread_count <= 1 {
-            let sequential = SequentialBatchExecutor::builder()
-                .report_interval(self.coordinator.report_interval())
-                .reporter_arc(Arc::clone(self.coordinator.reporter()))
-                .task_failure_policy(self.task_failure_policy)
-                .build();
+            let sequential = self.sequential_executor();
             return sequential
                 .execute_with_count(tasks, count)
                 .map_err(|error| error.map_scheduler_error(|never| match never {}));
