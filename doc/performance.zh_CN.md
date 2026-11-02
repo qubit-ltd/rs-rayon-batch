@@ -163,3 +163,57 @@ cargo bench --locked --bench scheduling_matrix_bench -- '^(reporting-|steady-cal
 `a1ccf12f020f61697d3348fd6e643b28a8ccdbafbb8c67ed637d2fb767867133`。对齐脚本清理了 `target`
 下的构建产物，但保留了 Criterion 输出；按验证后的清理流程会删除这些本地样本，以上估计则
 保存在本文中。
+
+## 后续实验归档
+
+今后每次用于支持正式性能结论的实验，都应以唯一运行 ID 建立证据包。普通开发者试跑无需归档。
+本规程不补造历史样本，也不改变上文所述限制；不要仅为填充归档规程而运行性能矩阵。
+
+证据包应保存在仓库 `target/`、临时目录和清理脚本管理路径以外的持久位置，并使用绝对路径。
+以下 GNU/Linux shell 模板创建新的证据包，并记录起始提交、工作树状态、tracked 修改、工具链版本、
+锁文件、清单及 benchmark 源码：
+
+```sh
+# 选择 target 和清理脚本管理范围之外的持久目录。
+evidence_root=/absolute/persistent/evidence
+run_id=rayon-batch-YYYYMMDDTHHMMSSZ
+bundle="$evidence_root/$run_id"
+mkdir -p "$evidence_root"
+mkdir "$bundle"
+git rev-parse HEAD > "$bundle/commit.txt"
+git status --porcelain=v1 > "$bundle/status.txt"
+git diff --binary HEAD > "$bundle/tracked.diff"
+rustc -Vv > "$bundle/rustc.txt"
+cargo -V > "$bundle/cargo.txt"
+cp Cargo.lock Cargo.toml "$bundle/"
+cp -R benches "$bundle/benches"
+```
+
+测量前，将 `commands.txt`、`environment.txt` 和 `dependencies.txt` 写入证据包。执行时记录完整 benchmark
+命令、过滤条件、baseline 名称及每次运行的顺序，并保留标准输出和错误日志。记录测量时实际使用的
+操作系统、CPU、可用并行度、Criterion 参数及 benchmark 源码版本。除已跟踪文件外，也要快照相关的未
+跟踪源码，并记录实际测量所用 `Cargo.toml`、`Cargo.lock`、benchmark 源码和其他源码快照的 SHA-256。
+在 `dependencies.txt` 中记录外部 path/patch 依赖的版本、提交和 dirty 状态，并纳入必要源码快照；没有此类
+依赖时明确写明无。记录归档生成时间和证据保留期限。
+
+测量后，把完整日志放入证据包，并复制本次运行对应的 Criterion 数据且保留目录结构。如果复制整个
+Criterion 树，应列出本次运行所属的确切 benchmark group 和 baseline，避免把旧数据误认为本次样本。为
+证据包文件生成清单，创建归档时不得覆盖旧归档，并在包外记录归档摘要：
+
+```sh
+cp -R target/criterion "$bundle/criterion"
+(cd "$bundle" && find . -type f ! -name SHA256SUMS -exec sha256sum {} + > SHA256SUMS)
+test ! -e "$bundle.tar.gz"
+tar -czf "$bundle.tar.gz" -C "$evidence_root" "$run_id"
+sha256sum "$bundle.tar.gz" > "$bundle.tar.gz.sha256"
+sha256sum -c "$bundle.tar.gz.sha256"
+tar -tzf "$bundle.tar.gz" > "$bundle.archive-files.txt"
+```
+
+任一步骤失败都应停止。将归档解压到独立校验目录，并在那里运行 `sha256sum -c SHA256SUMS`。只有在解压、
+包外 `sha256sum -c "$bundle.tar.gz.sha256"` 校验以及清单中每个条目都验证成功后，才能清理本地 Criterion
+样本。按记录的保留策略保存归档、包外摘要和校验结果。不得静默覆盖已有运行 ID 或归档。
+
+每条正式性能记录都应引用运行 ID、稳定的证据包位置、归档 SHA-256 和保留策略。本机路径必须标注“仅本机
+可访问”，不得称为公开可复核。只有在获得相应授权后才能上传或发布附件。本规程不配置凭据或上传服务；
+尚无真实正式实验时，不得虚构归档链接。

@@ -60,6 +60,14 @@ mod user_guide_en {}
 #[cfg(doctest)]
 mod user_guide_zh {}
 
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+mod readme_en {}
+
+#[doc = include_str!("../README.zh_CN.md")]
+#[cfg(doctest)]
+mod readme_zh {}
+
 mod constants;
 mod internal;
 mod rayon_batch_executor;

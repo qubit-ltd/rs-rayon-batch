@@ -209,3 +209,78 @@ source; the final aligned source SHA-256 is
 alignment script cleared generated build artifacts but left Criterion output;
 the required post-validation cleanup removes those local samples, while the
 recorded estimates remain here.
+
+## Archiving future experiments
+
+For each future experiment used to support a formal performance conclusion,
+create an evidence bundle with a unique run ID. Ordinary development
+measurements do not need to be archived. This procedure does not reconstruct
+historical samples or change the limits stated above. Do not run a benchmark
+matrix solely to populate this archive procedure.
+
+Store the bundle outside the repository's `target/` directory, temporary
+directories, and paths managed by cleanup scripts. Use an absolute persistent
+evidence directory. The following GNU/Linux shell template creates a new
+bundle and records the starting revision, worktree state, tracked changes,
+toolchain versions, lockfile, manifest and benchmark source:
+
+```sh
+# Choose a persistent directory outside target and cleanup-managed paths.
+evidence_root=/absolute/persistent/evidence
+run_id=rayon-batch-YYYYMMDDTHHMMSSZ
+bundle="$evidence_root/$run_id"
+mkdir -p "$evidence_root"
+mkdir "$bundle"
+git rev-parse HEAD > "$bundle/commit.txt"
+git status --porcelain=v1 > "$bundle/status.txt"
+git diff --binary HEAD > "$bundle/tracked.diff"
+rustc -Vv > "$bundle/rustc.txt"
+cargo -V > "$bundle/cargo.txt"
+cp Cargo.lock Cargo.toml "$bundle/"
+cp -R benches "$bundle/benches"
+```
+
+Before measuring, write `commands.txt`, `environment.txt` and
+`dependencies.txt` into the bundle. Record the complete benchmark command,
+filter, baseline name, and order of every run as it is executed; preserve
+stdout and stderr logs. Record the actual measurement-time OS, CPU, available
+parallelism, Criterion options and benchmark source revision. Snapshot any
+relevant untracked source files as well as tracked files, and record SHA-256
+for the actual `Cargo.toml`, `Cargo.lock`, benchmark source and other source
+snapshots used for measurement. In `dependencies.txt`, record versions,
+commits and dirty state for external path or patch dependencies and include
+needed source snapshots; explicitly write that there were no such
+dependencies when applicable. Record the archive creation time and how long
+the evidence will be retained.
+
+After measuring, put the complete logs in the bundle and copy the Criterion
+data for this run while preserving its directory structure. If copying the
+whole Criterion tree, list the exact benchmark groups and baselines belonging
+to this run so older results are not mistaken for its samples. Generate a
+manifest over bundle files, create the archive without overwriting an earlier
+archive, and record the archive digest outside the bundle:
+
+```sh
+cp -R target/criterion "$bundle/criterion"
+(cd "$bundle" && find . -type f ! -name SHA256SUMS -exec sha256sum {} + > SHA256SUMS)
+test ! -e "$bundle.tar.gz"
+tar -czf "$bundle.tar.gz" -C "$evidence_root" "$run_id"
+sha256sum "$bundle.tar.gz" > "$bundle.tar.gz.sha256"
+sha256sum -c "$bundle.tar.gz.sha256"
+tar -tzf "$bundle.tar.gz" > "$bundle.archive-files.txt"
+```
+
+Stop on any failed step. Extract the archive into a separate verification
+directory and run `sha256sum -c SHA256SUMS` there. Only after extraction,
+the external `sha256sum -c "$bundle.tar.gz.sha256"` check, and every manifest
+entry have been verified may the local Criterion samples be cleaned up. Keep
+the archive, its external digest, and the verification result according to
+the stated retention policy. Never silently replace an existing run ID or
+archive.
+
+Each formal performance record must cite the run ID, stable evidence-bundle
+location, archive SHA-256 and retention policy. A local-only path must be
+labelled as accessible only on that machine; do not describe it as publicly
+reproducible. Upload or publish attachments only when the required
+authorization exists. This procedure adds no credentials or upload service,
+and no archive link should be invented before a real formal experiment exists.
