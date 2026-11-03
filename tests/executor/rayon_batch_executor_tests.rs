@@ -10,8 +10,6 @@
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::panic::panic_any;
-use std::process::Command;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Barrier;
 use std::sync::Condvar;
@@ -21,7 +19,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
-use std::time::Instant;
 
 use crossbeam_channel::bounded;
 use qubit_batch::BatchExecutionError;
@@ -45,40 +42,7 @@ use crate::support::RecordingProgressReporter;
 use crate::support::TestCallable;
 use crate::support::TestTask;
 use crate::support::panic_payload_message;
-
-/// Runs a precisely named test in a child process with a bounded lifetime.
-///
-/// # Parameters
-///
-/// * `test_name` - Complete libtest name selected with `--exact`.
-/// * `marker` - Environment variable that selects the child branch and avoids
-///   recursively spawning another child.
-///
-/// # Panics
-///
-/// Panics if the test child cannot start, exits unsuccessfully, or exceeds the
-/// 10-second watchdog.
-fn run_panic_test_with_watchdog(test_name: &str, marker: &str) {
-    let mut child = Command::new(std::env::current_exe().expect("test executable"))
-        .args(["--exact", test_name, "--nocapture"])
-        .env(marker, "1")
-        .stdin(Stdio::null())
-        .spawn()
-        .expect("panic test child should start");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(status) = child.try_wait().expect("child status") {
-            assert!(status.success(), "panic test child failed: {status}");
-            return;
-        }
-        if Instant::now() >= deadline {
-            child.kill().expect("terminate stalled child");
-            let _ = child.wait();
-            panic!("source panic test exceeded watchdog");
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
+use crate::watchdog::run_with_watchdog;
 
 #[test]
 fn test_rayon_batch_executor_returns_progress_report_error() {
@@ -648,9 +612,10 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
 fn test_rayon_batch_executor_runs_tasks_concurrently() {
     const CHILD: &str = "QUBIT_RAYON_CONCURRENCY_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_panic_test_with_watchdog(
+        run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_rayon_batch_executor_runs_tasks_concurrently",
             CHILD,
+            "concurrent task execution",
         );
         return;
     }
@@ -822,9 +787,10 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
 fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
     const CHILD: &str = "QUBIT_RAYON_SOURCE_PANIC_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_panic_test_with_watchdog(
+        run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop",
             CHILD,
+            "source panic progress-loop cleanup",
         );
         return;
     }
@@ -897,9 +863,10 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
 fn test_runnable_drop_panic_propagates_without_poisoning_executor() {
     const MARKER: &str = "QUBIT_RAYON_RUNNABLE_DROP_PANIC_CHILD";
     if std::env::var_os(MARKER).is_none() {
-        run_panic_test_with_watchdog(
+        run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_runnable_drop_panic_propagates_without_poisoning_executor",
             MARKER,
+            "runnable drop panic cleanup",
         );
         return;
     }

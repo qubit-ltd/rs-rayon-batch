@@ -13,3 +13,4 @@
 mod docs;
 mod executor;
 mod support;
+mod watchdog;

@@ -11,68 +11,20 @@
 
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
-use std::process::Command;
-use std::process::Stdio;
 use std::sync::Barrier;
 use std::thread;
-use std::time::Duration;
-use std::time::Instant;
 
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::TaskFailurePolicy;
 use qubit_rayon_batch::RayonBatchExecutor;
 
+mod watchdog;
+use watchdog::run_with_watchdog;
+
 const SAME_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_SAME_POOL_TEST_CHILD";
 const DIFFERENT_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_DIFFERENT_POOL_TEST_CHILD";
 const DIFFERENT_POOL_SOURCE_CHILD: &str = "QUBIT_BATCH_DIFFERENT_POOL_SOURCE_CHILD";
-const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Runs one test in an independently terminable subprocess.
-///
-/// The environment marker prevents recursive subprocess creation. The parent
-/// polls only to enforce the watchdog; barriers inside the child establish the
-/// concurrency conditions exercised by each test.
-///
-/// # Parameters
-///
-/// * `test_name` - Exact test-harness name to execute in the child.
-/// * `child_environment` - Environment marker that selects the child branch.
-///
-/// # Panics
-///
-/// Panics if the child cannot be managed, exits unsuccessfully, or exceeds the
-/// watchdog timeout.
-fn run_with_watchdog(test_name: &str, child_environment: &str) {
-    let mut child = Command::new(std::env::current_exe().expect("the current test executable should be available"))
-        .arg("--exact")
-        .arg(test_name)
-        .arg("--nocapture")
-        .env(child_environment, "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .expect("the nested batch test subprocess should start");
-    let deadline = Instant::now() + WATCHDOG_TIMEOUT;
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .expect("the nested batch test subprocess should remain observable")
-        {
-            assert!(status.success(), "nested subprocess failed: {status}");
-            return;
-        }
-        if Instant::now() >= deadline {
-            child
-                .kill()
-                .expect("the timed-out nested batch test subprocess should be killed");
-            let _ = child.wait();
-            panic!("nested batch exceeded the 10-second watchdog");
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
 
 /// Exercises successful same-pool nesting for one executor configuration.
 ///
@@ -198,7 +150,7 @@ fn test_nested_same_pool_completes() {
         return;
     }
 
-    run_with_watchdog("test_nested_same_pool_completes", SAME_POOL_CHILD);
+    run_with_watchdog("test_nested_same_pool_completes", SAME_POOL_CHILD, "same-pool nesting");
 }
 
 #[test]
@@ -235,14 +187,22 @@ fn test_nested_different_pool_remains_parallel() {
         return;
     }
 
-    run_with_watchdog("test_nested_different_pool_remains_parallel", DIFFERENT_POOL_CHILD);
+    run_with_watchdog(
+        "test_nested_different_pool_remains_parallel",
+        DIFFERENT_POOL_CHILD,
+        "different-pool nesting",
+    );
 }
 
 #[test]
 fn test_nested_from_source_producer_completes() {
     const CHILD: &str = "QUBIT_BATCH_NESTED_SOURCE_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_with_watchdog("test_nested_from_source_producer_completes", CHILD);
+        run_with_watchdog(
+            "test_nested_from_source_producer_completes",
+            CHILD,
+            "source-producer nesting",
+        );
         return;
     }
     let executor = RayonBatchExecutor::builder()
@@ -284,7 +244,11 @@ fn test_nested_from_source_producer_completes() {
 fn test_source_panic_does_not_leak_active_guard() {
     const CHILD: &str = "QUBIT_RAYON_GUARD_CLEANUP_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        run_with_watchdog("test_source_panic_does_not_leak_active_guard", CHILD);
+        run_with_watchdog(
+            "test_source_panic_does_not_leak_active_guard",
+            CHILD,
+            "source-panic guard cleanup",
+        );
         return;
     }
 
@@ -323,6 +287,7 @@ fn test_source_producer_can_use_a_different_pool_in_parallel() {
         run_with_watchdog(
             "test_source_producer_can_use_a_different_pool_in_parallel",
             DIFFERENT_POOL_SOURCE_CHILD,
+            "parallel different-pool source",
         );
         return;
     }

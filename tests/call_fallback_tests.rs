@@ -9,12 +9,8 @@
 #![allow(clippy::result_large_err)]
 use std::cell::Cell;
 use std::io;
-use std::process::Command;
-use std::process::Stdio;
 use std::sync::Barrier;
 use std::thread;
-use std::time::Duration;
-use std::time::Instant;
 
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
@@ -25,6 +21,9 @@ use qubit_progress::Phase;
 use qubit_progress::Reporter;
 use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor as Executor;
+
+mod watchdog;
+use watchdog::run_with_watchdog;
 
 #[derive(Debug)]
 struct NonClone {
@@ -196,29 +195,6 @@ fn test_count_and_report_errors_preserve_outputs() {
     }
 }
 
-/// Runs the reentrancy scenario in a process that can be killed on deadlock.
-fn run_callable_watchdog() {
-    let mut child = Command::new(std::env::current_exe().expect("test executable"))
-        .args(["--exact", "test_callable_reentrancy_boundaries", "--nocapture"])
-        .env("QUBIT_CALLABLE_REENTRANCY_CHILD", "1")
-        .stdin(Stdio::null())
-        .spawn()
-        .expect("child process");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(status) = child.try_wait().expect("child status") {
-            assert!(status.success(), "callable child failed: {status}");
-            return;
-        }
-        if Instant::now() >= deadline {
-            child.kill().expect("kill deadlocked child");
-            let _ = child.wait();
-            panic!("callable reentrancy exceeded watchdog");
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
 /// Conversion itself performs a nested call, before its first next().
 struct ReentrantSource {
     executor: Executor,
@@ -244,7 +220,11 @@ impl IntoIterator for ReentrantSource {
 #[test]
 fn test_callable_reentrancy_boundaries() {
     if std::env::var_os("QUBIT_CALLABLE_REENTRANCY_CHILD").is_none() {
-        run_callable_watchdog();
+        run_with_watchdog(
+            "test_callable_reentrancy_boundaries",
+            "QUBIT_CALLABLE_REENTRANCY_CHILD",
+            "callable reentrancy",
+        );
         return;
     }
     let executor = Executor::builder()

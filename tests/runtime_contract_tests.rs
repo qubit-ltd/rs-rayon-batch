@@ -9,8 +9,6 @@
 #![allow(clippy::result_large_err)]
 
 use std::io;
-use std::process::Command;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Barrier;
 use std::sync::Condvar;
@@ -33,44 +31,15 @@ use qubit_progress::Reporter;
 use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor;
 
+mod watchdog;
+use watchdog::run_with_watchdog;
+
 const CONCURRENT_CALLS_CHILD: &str = "QUBIT_BATCH_RAYON_CONCURRENT_CALLS_TEST_CHILD";
 const ADMISSION_WINDOW_CHILD: &str = "QUBIT_BATCH_RAYON_ADMISSION_WINDOW_TEST_CHILD";
 const REPORTER_FAILURE_CHILD: &str = "QUBIT_BATCH_RAYON_REPORTER_FAILURE_TEST_CHILD";
 const PAUSED_SOURCE_CHILD: &str = "QUBIT_BATCH_RAYON_PAUSED_SOURCE_TEST_CHILD";
 const WATCHDOG_TIMEOUT: Duration = Duration::from_secs(10);
 const COORDINATION_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Runs one test in an independently terminable subprocess.
-fn run_with_watchdog(test_name: &str, child_environment: &str) {
-    let mut child = Command::new(std::env::current_exe().expect("the current test executable should be available"))
-        .arg("--exact")
-        .arg(test_name)
-        .arg("--nocapture")
-        .env(child_environment, "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .expect("the runtime-contract test subprocess should start");
-    let deadline = Instant::now() + WATCHDOG_TIMEOUT;
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .expect("the runtime-contract subprocess should remain observable")
-        {
-            assert!(status.success(), "runtime-contract subprocess failed: {status}");
-            return;
-        }
-        if Instant::now() >= deadline {
-            child
-                .kill()
-                .expect("the timed-out runtime-contract subprocess should be killed");
-            let _ = child.wait();
-            panic!("runtime contract exceeded the 10-second watchdog");
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
 
 /// Waits for an atomic counter to reach a lower bound.
 fn wait_for_count(counter: &AtomicUsize, expected: usize) {
@@ -286,6 +255,7 @@ fn test_cloned_executor_concurrent_calls_remain_independent() {
         run_with_watchdog(
             "test_cloned_executor_concurrent_calls_remain_independent",
             CONCURRENT_CALLS_CHILD,
+            "concurrent cloned-executor calls",
         );
         return;
     }
@@ -385,6 +355,7 @@ fn test_blocked_workers_bound_unfinished_admission_window() {
         run_with_watchdog(
             "test_blocked_workers_bound_unfinished_admission_window",
             ADMISSION_WINDOW_CHILD,
+            "bounded admission window",
         );
         return;
     }
@@ -463,6 +434,7 @@ fn test_running_reporter_failure_drains_accepted_tasks() {
         run_with_watchdog(
             "test_running_reporter_failure_drains_accepted_tasks",
             REPORTER_FAILURE_CHILD,
+            "running reporter failure drain",
         );
         return;
     }
@@ -582,6 +554,7 @@ fn test_paused_source_releases_shared_pool_after_resume() {
         run_with_watchdog(
             "test_paused_source_releases_shared_pool_after_resume",
             PAUSED_SOURCE_CHILD,
+            "paused source pool release",
         );
         return;
     }
