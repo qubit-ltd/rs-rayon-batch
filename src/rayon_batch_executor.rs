@@ -146,7 +146,7 @@ impl RayonBatchExecutor {
     ///   executor.
     /// * `builder` - Consumed builder carrying the validated executor
     ///   configuration (`thread_count`, `sequential_threshold`,
-    ///   `report_interval`, and `reporter`).
+    ///   `report_interval`, `reporter`, and `task_failure_policy`).
     ///
     /// # Returns
     ///
@@ -429,6 +429,9 @@ impl BatchExecutor for RayonBatchExecutor {
 ///
 /// * `work_receiver` - Clone of the crossbeam work receiver. Crossbeam clones
 ///   share the queue safely across Rayon workers.
+/// * `context` - Shared execution context that executes accepted tasks and
+///   records their outcomes; this worker handles receiving tasks from the
+///   queue.
 fn run_rayon_worker<T, E>(work_receiver: Receiver<ParallelBatchTask<T>>, context: &ParallelBatchExecutionContext<E>)
 where
     T: Runnable<E> + Send,
