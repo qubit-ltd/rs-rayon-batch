@@ -12,9 +12,11 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 mod internal;
+mod watchdog;
 
 use internal::assert_backend_contract;
 use internal::assert_failure_policy_contract;
+use watchdog::run_with_watchdog;
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::ParallelBatchExecutor;
@@ -47,6 +49,16 @@ fn test_backends_share_execution_and_output_contracts() {
 /// Compares policies while allowing already accepted parallel tasks to drain.
 #[test]
 fn test_backends_share_cooperative_failure_policy() {
+    const CHILD: &str = "QUBIT_RAYON_BACKEND_FAILURE_POLICY_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_with_watchdog(
+            "test_backends_share_cooperative_failure_policy",
+            CHILD,
+            "backend cooperative failure policy",
+        );
+        return;
+    }
+
     let policy = TaskFailurePolicy::StopOnFirstFailure;
     assert_failure_policy_contract(&SequentialBatchExecutor::builder().task_failure_policy(policy).build());
     for threshold in [0, usize::MAX] {
