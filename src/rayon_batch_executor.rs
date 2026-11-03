@@ -206,7 +206,8 @@ impl RayonBatchExecutor {
         self.task_failure_policy
     }
 
-    /// Returns the configured interval for due-based running progress callbacks.
+    /// Returns the configured interval for due-based running progress
+    /// callbacks.
     ///
     /// Lifecycle callbacks are not subject to this minimum interval. A zero
     /// interval reports at implementation-defined running progress points and
@@ -214,7 +215,8 @@ impl RayonBatchExecutor {
     ///
     /// # Returns
     ///
-    /// The configured minimum interval between due-based running progress callbacks.
+    /// The configured minimum interval between due-based running progress
+    /// callbacks.
     #[must_use = "inspect the configured report interval"]
     #[inline]
     pub const fn report_interval(&self) -> Duration {

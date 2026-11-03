@@ -16,13 +16,13 @@ mod watchdog;
 
 use internal::assert_backend_contract;
 use internal::assert_failure_policy_contract;
-use watchdog::run_with_watchdog;
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::ParallelBatchExecutor;
 use qubit_batch::SequentialBatchExecutor;
 use qubit_batch::TaskFailurePolicy;
 use qubit_rayon_batch::RayonBatchExecutor;
+use watchdog::run_with_watchdog;
 
 /// Includes both forced parallel paths and their small-batch fallbacks.
 #[test]
