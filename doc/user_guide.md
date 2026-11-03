@@ -95,7 +95,7 @@ producer reenters the same pool.
 
 | Setting | Default | Contract |
 | --- | --- | --- |
-| `thread_count` | Available parallelism, or 1 if detection fails | Must be positive; one worker selects caller-thread sequential execution. |
+| `thread_count` | Available parallelism, or 1 if detection fails | Must be positive. Rayon may cap the configured value; scheduling follows actual pool capacity, while `thread_count()` returns the configured value. |
 | `sequential_threshold` | 100 | Declared counts at or below this value run sequentially; zero disables only the non-empty batch-size fallback. |
 | `report_interval` | 5 seconds | Zero reports at implementation-defined running progress points; no wall-clock heartbeat guarantee. |
 | `reporter` | `NoopReporter` | `reporter_arc` shares the configured reporter; `no_reporter` resets it. |

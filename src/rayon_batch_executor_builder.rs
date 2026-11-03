@@ -52,12 +52,15 @@ pub struct RayonBatchExecutorBuilder {
 }
 
 impl RayonBatchExecutorBuilder {
-    /// Sets the Rayon worker-thread count. The default is the available
-    /// parallelism, or 1 if it cannot be detected.
+    /// Sets the configured Rayon worker-thread count. The default is the
+    /// available parallelism, or 1 if it cannot be detected. Rayon may cap
+    /// the requested value when building the pool; scheduling follows the
+    /// actual pool capacity, while [`RayonBatchExecutor::thread_count`]
+    /// returns this configured value.
     ///
     /// # Parameters
     ///
-    /// * `thread_count` - Number of Rayon worker threads.
+    /// * `thread_count` - Requested number of Rayon worker threads.
     ///
     /// # Returns
     ///

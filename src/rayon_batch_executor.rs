@@ -164,6 +164,10 @@ impl RayonBatchExecutor {
 
     /// Returns the configured Rayon worker-thread count.
     ///
+    /// Rayon may cap this value when building the pool. Parallel scheduling
+    /// uses the actual pool capacity, while this getter continues to return
+    /// the configured value.
+    ///
     /// # Returns
     ///
     /// The configured worker-thread count.
@@ -171,6 +175,17 @@ impl RayonBatchExecutor {
     #[inline]
     pub const fn thread_count(&self) -> usize {
         self.thread_count
+    }
+
+    /// Bounds scheduler receivers and queue capacity by the actual Rayon pool.
+    ///
+    /// # Parameters
+    /// * `count` - Declared number of tasks in this batch.
+    ///
+    /// # Returns
+    /// The smaller of the actual pool capacity and the declared task count.
+    fn worker_count(&self, count: usize) -> usize {
+        self.pool.current_num_threads().min(count)
     }
 
     /// Returns the configured sequential fallback threshold.
@@ -382,7 +397,7 @@ impl BatchExecutor for RayonBatchExecutor {
                 .map_err(|error| error.map_scheduler_error(|never| match never {}));
         }
 
-        let worker_count = self.thread_count.min(count);
+        let worker_count = self.worker_count(count);
         self.coordinator
             .execute_with_source(tasks, count, self.task_failure_policy, move |source, context| {
                 self.pool.in_place_scope_fifo(|scope| {
@@ -424,5 +439,26 @@ where
             break;
         };
         context.execute_task(task);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rayon::ThreadPoolBuilder;
+
+    use crate::RayonBatchExecutor;
+
+    #[test]
+    fn test_worker_count_uses_actual_pool_capacity() {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .expect("small pool");
+        let builder = RayonBatchExecutor::builder().thread_count(usize::MAX);
+        let executor = RayonBatchExecutor::new_with_rayon(pool, builder);
+        assert_eq!(executor.thread_count(), usize::MAX);
+        for (count, expected) in [(0, 0), (1, 1), (2, 2), (3, 2), (usize::MAX, 2)] {
+            assert_eq!(executor.worker_count(count), expected);
+        }
     }
 }

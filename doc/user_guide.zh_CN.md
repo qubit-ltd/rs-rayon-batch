@@ -85,7 +85,7 @@ assert_eq!(result.outputs().len(), 7);
 
 | 配置 | 默认值 | 约定 |
 | --- | --- | --- |
-| `thread_count` | 可用并行度；检测失败时为 1 | 必须大于 0；一个 worker 时在调用线程顺序执行。 |
+| `thread_count` | 可用并行度；检测失败时为 1 | 必须大于 0。Rayon 可能会截断配置值；实际调度遵循线程池容量，而 `thread_count()` 仍返回配置值。 |
 | `sequential_threshold` | 100 | 声明数量小于等于此值时顺序执行；0 仅关闭非空批次按大小触发的回退。 |
 | `report_interval` | 5 秒 | 设为 0 时在实现定义的 running 进度点报告；不保证按墙上时间定期心跳。 |
 | `reporter` | `NoopReporter` | `reporter_arc` 共享配置的 reporter；`no_reporter` 将其重置。 |
