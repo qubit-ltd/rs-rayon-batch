@@ -450,10 +450,7 @@ mod tests {
 
     #[test]
     fn test_worker_count_uses_actual_pool_capacity() {
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(2)
-            .build()
-            .expect("small pool");
+        let pool = ThreadPoolBuilder::new().num_threads(2).build().expect("small pool");
         let builder = RayonBatchExecutor::builder().thread_count(usize::MAX);
         let executor = RayonBatchExecutor::new_with_rayon(pool, builder);
         assert_eq!(executor.thread_count(), usize::MAX);
