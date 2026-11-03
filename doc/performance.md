@@ -114,8 +114,8 @@ The runs varied substantially: for example, `scoped_parallel / 32` ranged
 from 120 microseconds in round 1 to 17–20 milliseconds in rounds 2 and 3;
 many parallel points also had numerous severe outliers. This host was not
 stable enough for an executor comparison or a production speedup claim. The
-assembly rules out the suspected removal of the CPU workload, so the current
-benchmark remains unchanged.
+assembly rules out the suspected removal of the CPU workload, so the benchmark
+was left unchanged at that time.
 
 ## Corrected CPU workload measurement (2026-11-03)
 
