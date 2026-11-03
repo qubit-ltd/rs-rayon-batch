@@ -36,9 +36,9 @@ doctest = true
 
 [dependencies]
 crossbeam-channel = "^0.5"
-qubit-function = "0.18"
-qubit-progress = { version = "0.9", default-features = false }
-qubit-batch = "0.14"
+qubit-function = "^0.18"
+qubit-progress = { version = "^0.9", default-features = false }
+qubit-batch = "^0.14"
 rayon = "^1.12"
 thiserror = "^2.0"
 
