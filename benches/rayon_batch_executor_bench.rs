@@ -58,6 +58,7 @@ impl Runnable<()> for CpuTask {
     fn run(&mut self) -> Result<(), ()> {
         let mut value = self.seed;
         for _ in 0..256 {
+            value = black_box(value);
             value = value.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
         }
         black_box(value);

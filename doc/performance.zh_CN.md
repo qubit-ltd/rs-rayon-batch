@@ -44,7 +44,7 @@ Rayon 工作线程池在计时外创建，工作线程跨调用复用。每次�
 这是新测量的产物位置，历史样本并未保存在此处。进行新的基线对比时，应使用相同 benchmark
 源码和依赖检出版本。
 
-## CPU 负载核查（2026-11-01）
+## 修正前的 CPU 负载核查（2026-11-01）
 
 在考虑修改前，先检查了已编译 benchmark 目标中的当前 `CpuTask::run` 负载。本次使用
 `b1a09a5` 提交、现有 benchmark 源码、默认 release profile、Rust 1.94.0 / LLVM 21.1.8、
@@ -91,8 +91,46 @@ Criterion 样本与估计已保留在本地目录
 `target/criterion/batch_executor_cpu/<executor>/<size>/rb005-before-<轮次>/`，其中轮次为1、2或3。
 三轮波动明显：
 例如 `scoped_parallel / 32` 从第1轮的120微秒变为第2、3轮的17至20毫秒；多个并行点也出现较多
-严重离群值。该主机环境不足以支持可靠的执行器对比或生产加速结论。汇编排除了 CPU 负载被
-消除的疑点，因此保留现有 benchmark。
+严重离群值。该主机环境不足以支持可靠的执行器对比或生产加速结论。当时的汇编排除了 CPU 负载被消除的疑点；后续 barrier 修改见下文修正后的负载测量。
+
+## 修正后的 CPU 负载测量（2026-11-03）
+
+现在 `CpuTask::run` 在256次递推循环的每次迭代输入处调用
+`black_box(value)`。乘数、加数、迭代次数、循环后的 barrier 和 benchmark ID 均保持不变。
+通过 `cargo rustc --locked --release --bench rayon_batch_executor_bench -- --emit=asm`
+生成的 release 汇编中，`.LBB42_3`、`.LBB414_15`、`.LBB414_27`、`.LBB417_47` 和
+`.LBB417_62` 展示了256次循环计数、每次迭代一次乘法和递增、计数器每次减1，以及循环输入处的
+black-box 编译器屏障（`#APP` / `#NO_APP`）。这是 executor worker 执行 `CpuTask` 的编译路径。
+此前核查中的八步合并负载与本次修正后的负载不可直接比较；本文不作前后速度结论。
+
+运行 ID `RB-20261103T123700Z` 使用的 benchmark 源码 SHA-256 为
+`256c7518d5378bb37698614fa288c7ec276c715c9a2e34f4602e5063a11107bf`，`Cargo.toml` SHA-256 为
+`946349a0ec2b9708b5887462f908772b5232097d034a7d34fa3dc3b5455320b7`，`Cargo.lock` SHA-256 为
+`ac46a0543e12d089ae226a329783880c57542549d5c141e0f8114b2f3eeac735`。测量基于提交
+`c19b736b654ac4c42744d66620de9358200527d9`，当时 worktree 仅有本次 benchmark 源码修改。
+主机为 Linux x86_64，内核 `6.8.0-147-generic`，Intel Xeon E5-2680 v4 2.40 GHz，可用逻辑 CPU 为56。
+Rust 1.94.0（LLVM 21.1.8），Cargo 1.94.0。依赖由 `Cargo.lock` 锁定，无外部 path 或 patch 依赖。
+
+只运行了一次目标 benchmark；Criterion 使用默认参数（100个样本、3秒预热、每点请求测量5秒），
+并行 executor 使用4个 worker，过滤条件和 baseline 参数如下：
+
+```sh
+cargo bench --locked --bench rayon_batch_executor_bench -- batch_executor_cpu --save-baseline rb-cpu-20261103T123700Z
+```
+
+Criterion 估计值单位为微秒，格式为均值 [95%置信区间]，仅代表本次运行：
+
+| Executor / 项数 | 32 | 64 | 100 | 128 | 256 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| sequential | 30.089 [29.452, 30.745] | 56.322 [56.080, 56.647] | 86.350 [86.318, 86.385] | 110.40 [110.37, 110.44] | 223.03 [221.14, 225.08] |
+| scoped_parallel | 149.45 [146.59, 152.88] | 164.25 [161.36, 167.61] | 163.35 [160.82, 166.71] | 184.39 [176.97, 193.86] | 437.29 [279.79, 673.26] |
+| rayon | 26.836 [24.924, 29.834] | 50.589 [44.681, 57.766] | 75.376 [75.131, 75.560] | 93.413 [93.100, 93.698] | 129.14 [124.97, 133.13] |
+
+部分用例出现明显离群值：sequential / 32 为20%，rayon / 64 为24%，scoped_parallel / 256 为17%。
+其中 scoped_parallel / 256 的区间较宽。这是一次本地运行，不能构成稳定的 executor 对比或性能提升结论。
+仅本机可访问的完整证据包（含日志、汇编、源码快照和本次运行 Criterion 样本及估计）位于
+`/data/working/qubit/evidence/rayon-batch/RB-20261103T123700Z`；归档 SHA-256：`c03c2446e5c7b272ade1a8a6e385d364bb6ad9f28f1954541ebae6d172cd3646`。
+归档及校验文件在此仅本机可访问目录中无限期保留，不可公开访问。
 
 ## 因正确性失败淘汰队列候选
 

@@ -56,7 +56,7 @@ A new run emits Criterion raw estimates and sample data under
 retained location for the historical samples. Use the same benchmark source
 and dependency checkout for any new baseline comparison.
 
-## CPU workload audit (2026-11-01)
+## CPU workload audit before correction (2026-11-01)
 
 The current `CpuTask::run` workload was checked in the compiled benchmark
 target before considering a change. The run used commit `b1a09a5`, the existing
@@ -116,6 +116,58 @@ many parallel points also had numerous severe outliers. This host was not
 stable enough for an executor comparison or a production speedup claim. The
 assembly rules out the suspected removal of the CPU workload, so the current
 benchmark remains unchanged.
+
+## Corrected CPU workload measurement (2026-11-03)
+
+`CpuTask::run` now applies `black_box(value)` at the input to each of its 256
+recurrence iterations. The multiplier, addend, iteration count, final barrier,
+and benchmark IDs are unchanged. In the release assembly emitted by
+`cargo rustc --locked --release --bench rayon_batch_executor_bench -- --emit=asm`,
+`.LBB42_3`, `.LBB414_15`, `.LBB414_27`, `.LBB417_47`, and `.LBB417_62` show a
+256-iteration counter, one multiply and increment per pass, a decrement by one,
+and the black-box compiler barrier (`#APP` / `#NO_APP`) at the loop input. This
+is the compiled `CpuTask` execution path used by the executor workers. The
+previous audit's eight-step-fused workload and this corrected workload are not
+directly comparable; no before/after speed claim is made.
+
+Run ID `RB-20261103T123700Z` used benchmark source SHA-256
+`256c7518d5378bb37698614fa288c7ec276c715c9a2e34f4602e5063a11107bf`,
+`Cargo.toml` SHA-256 `946349a0ec2b9708b5887462f908772b5232097d034a7d34fa3dc3b5455320b7`,
+and `Cargo.lock` SHA-256
+`ac46a0543e12d089ae226a329783880c57542549d5c141e0f8114b2f3eeac735`.
+The source was measured from commit `c19b736b654ac4c42744d66620de9358200527d9`
+with only this benchmark-source edit in the worktree at measurement time. The
+host was Linux x86_64, kernel `6.8.0-147-generic`, Intel Xeon E5-2680 v4 at
+2.40 GHz, with 56 available logical CPUs. Rust was 1.94.0 (LLVM 21.1.8), Cargo
+1.94.0. Dependencies were locked by `Cargo.lock`; there were no external path
+or patch dependencies.
+
+The single targeted run used the default Criterion settings (100 samples,
+3-second warmup, 5-second requested measurement per point), four workers for
+parallel executors, and these exact filter and baseline arguments:
+
+```sh
+cargo bench --locked --bench rayon_batch_executor_bench -- batch_executor_cpu --save-baseline rb-cpu-20261103T123700Z
+```
+
+Criterion estimates in microseconds are shown as mean [95% confidence
+interval]. They describe this run only:
+
+| Executor / items | 32 | 64 | 100 | 128 | 256 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| sequential | 30.089 [29.452, 30.745] | 56.322 [56.080, 56.647] | 86.350 [86.318, 86.385] | 110.40 [110.37, 110.44] | 223.03 [221.14, 225.08] |
+| scoped_parallel | 149.45 [146.59, 152.88] | 164.25 [161.36, 167.61] | 163.35 [160.82, 166.71] | 184.39 [176.97, 193.86] | 437.29 [279.79, 673.26] |
+| rayon | 26.836 [24.924, 29.834] | 50.589 [44.681, 57.766] | 75.376 [75.131, 75.560] | 93.413 [93.100, 93.698] | 129.14 [124.97, 133.13] |
+
+Some cases had substantial outliers: 20% for sequential / 32, 24% for rayon /
+64, and 17% for scoped_parallel / 256. In particular, the scoped_parallel /
+256 interval is wide. This is one local run, not a stable executor comparison
+or a performance-gain claim. The full local-only evidence bundle, including
+logs, assembly, source snapshots, and this run's Criterion samples and
+estimates, is at
+`/data/working/qubit/evidence/rayon-batch/RB-20261103T123700Z`; archive SHA-256:
+`c03c2446e5c7b272ade1a8a6e385d364bb6ad9f28f1954541ebae6d172cd3646`. Retain the archive and verification artifacts indefinitely
+in that local-only evidence directory; they are not publicly accessible.
 
 ## Queue candidate rejected by correctness
 
