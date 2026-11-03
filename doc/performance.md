@@ -86,8 +86,11 @@ Three runs used the same command with `rb005-before-1`, `rb005-before-2`, and
 Criterion used its default 100 samples, 3-second
 warmup, and 5-second target measurement. It warned that some points could not
 complete 100 samples in the target time; the sample count and timing settings
-were left unchanged. Values below are means in microseconds with 95%
-confidence intervals, read from Criterion's slope estimates.
+were left unchanged. Values below are per-iteration time estimates from
+Criterion's linear-regression slope, with 95% confidence intervals, in
+microseconds. This statistic is identified by the historical record; the
+original samples are unavailable in this checkout, so the values could not be
+independently verified during this review.
 
 | Case | Round 1 | Round 2 | Round 3 |
 | --- | ---: | ---: | ---: |
@@ -107,9 +110,10 @@ confidence intervals, read from Criterion's slope estimates.
 | rayon / 128 | 49.109 [46.609, 52.108] | 6,487.184 [1,709.577, 12,839.068] | 562.100 [530.841, 621.618] |
 | rayon / 256 | 2,026.947 [976.221, 3,411.025] | 4,568.617 [1,950.743, 8,212.061] | 2,514.571 [1,507.484, 3,791.988] |
 
-Criterion sample data and estimates are retained locally under
+The historical record lists the Criterion sample data and estimates under
 `target/criterion/batch_executor_cpu/<executor>/<size>/rb005-before-<round>/`,
-where `<round>` is 1, 2, or 3.
+where `<round>` is 1, 2, or 3. This is the recorded output location; the
+original samples are unavailable in this checkout.
 The runs varied substantially: for example, `scoped_parallel / 32` ranged
 from 120 microseconds in round 1 to 17–20 milliseconds in rounds 2 and 3;
 many parallel points also had numerous severe outliers. This host was not

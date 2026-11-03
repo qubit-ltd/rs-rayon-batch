@@ -35,7 +35,6 @@ use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor;
 use qubit_rayon_batch::RayonBatchExecutorBuildError;
 
-use crate::support::FailingProgressReporter;
 use crate::support::PanickingProgressReporter;
 use crate::support::ProgressPanicPhase;
 use crate::support::RecordingProgressReporter;
@@ -45,17 +44,32 @@ use crate::support::panic_payload_message;
 use crate::watchdog::run_with_watchdog;
 
 #[test]
-fn test_rayon_batch_executor_returns_progress_report_error() {
+fn test_rayon_batch_executor_returns_terminal_progress_report_error() {
+    struct TerminalFailureReporter;
+
+    impl Reporter for TerminalFailureReporter {
+        fn report(&self, event: &Event) -> Result<(), ReporterError> {
+            if matches!(event.phase(), Phase::Succeeded | Phase::Failed) {
+                Err(ReporterError::new(std::io::Error::other(
+                    "synthetic terminal progress report failure",
+                )))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
     let executor = RayonBatchExecutor::builder()
         .thread_count(2)
         .sequential_threshold(1)
-        .reporter(FailingProgressReporter::after_successes(1))
+        .report_interval(Duration::ZERO)
+        .reporter(TerminalFailureReporter)
         .build()
         .expect("valid executor configuration should build");
 
     let error = executor
         .execute_with_count([TestTask::succeed(), TestTask::succeed()], 2)
-        .expect_err("failing reporter should fail batch execution");
+        .expect_err("terminal reporter failure should fail batch execution");
 
     assert!(matches!(&error, BatchExecutionError::ProgressReport { .. }));
     assert_eq!(error.outcome().completed_count(), 2);
