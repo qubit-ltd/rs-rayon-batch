@@ -270,8 +270,17 @@ impl BatchExecutor for RayonBatchExecutor {
     /// # Errors
     ///
     /// Returns count-validation, progress-reporting, or scheduling failures
-    /// with partial values. A count mismatch occurs when the source yields
-    /// fewer or more tasks than `count`.
+    /// with partial values. A count shortfall is detected when real source
+    /// exhaustion is observed before `count` tasks; excess input is detected
+    /// when an additional item beyond `count` is observed.
+    ///
+    /// A task-failure policy may stop admission before the source count is
+    /// fully validated. An `Ok` result, even with all declared tasks completed,
+    /// does not by itself prove complete source-count validation. Inspect the
+    /// enclosing error, termination, completion counts, and indexed failures
+    /// together. See the
+    /// [termination guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.md#completion-counts-and-termination)
+    /// and [Chinese user guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.zh_CN.md).
     ///
     /// # Panics
     ///
@@ -325,12 +334,21 @@ impl BatchExecutor for RayonBatchExecutor {
     ///
     /// # Errors
     ///
-    /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails, a
-    /// count-mismatch variant when `tasks` yields fewer or more tasks than
-    /// `count`, [`BatchExecutionError::IncompleteSchedule`] when an accepted
-    /// task is not completed by the Rayon scheduler, or
+    /// Returns [`BatchExecutionError::ProgressReport`] when reporting fails,
+    /// a count-shortfall error when real source exhaustion is observed before
+    /// `count` tasks, or a count-exceeded error when an additional item beyond
+    /// `count` is observed. Returns [`BatchExecutionError::IncompleteSchedule`]
+    /// when an accepted task is not completed by the Rayon scheduler, or
     /// [`BatchExecutionError::ScheduleFailed`] if the internal work channel
     /// disconnects, with [`RayonBatchScheduleError`] as its source.
+    ///
+    /// A task-failure policy may stop admission before the source count is
+    /// fully validated. An `Ok` result, even with all declared tasks completed,
+    /// does not by itself prove complete source-count validation. Inspect the
+    /// enclosing error, termination, completion counts, and indexed failures
+    /// together. See the
+    /// [termination guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.md#completion-counts-and-termination)
+    /// and [Chinese user guide](https://github.com/qubit-ltd/rs-rayon-batch/blob/main/doc/user_guide.zh_CN.md).
     ///
     /// # Panics
     ///
