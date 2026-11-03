@@ -28,14 +28,38 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 ///
 /// # Panics
 ///
-/// Panics if the subprocess cannot be managed, exits unsuccessfully, or
-/// exceeds the watchdog timeout.
+/// Panics if the test name is missing or cannot be uniquely listed, if the
+/// subprocess cannot be managed or exits unsuccessfully, or if it exceeds the
+/// watchdog timeout. A selected ignored test is executed as well.
 pub(crate) fn run_with_watchdog(test_name: &str, marker: &str, scenario: &str) {
     let executable = std::env::current_exe()
         .unwrap_or_else(|error| panic!("{scenario} ({test_name}): cannot locate current test executable: {error}"));
+    let listing = Command::new(&executable)
+        .args(["--list", "--format", "terse", "--exact", test_name])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap_or_else(|error| panic!("{scenario} ({test_name}): cannot list test: {error}"));
+    assert!(
+        listing.status.success(),
+        "{scenario} ({test_name}): test listing failed: {}; stderr={}",
+        listing.status,
+        String::from_utf8_lossy(&listing.stderr)
+    );
+    let listed = std::str::from_utf8(&listing.stdout)
+        .unwrap_or_else(|error| panic!("{scenario} ({test_name}): invalid test listing UTF-8: {error}"));
+    let expected = format!("{test_name}: test");
+    let records: Vec<_> = listed.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(
+        records,
+        [expected.as_str()],
+        "{scenario} ({test_name}): expected exactly one test; stderr={}",
+        String::from_utf8_lossy(&listing.stderr)
+    );
+
     let mut child = Command::new(executable)
         .arg("--exact")
         .arg(test_name)
+        .arg("--include-ignored")
         .arg("--nocapture")
         .env(marker, "1")
         .stdin(Stdio::null())
