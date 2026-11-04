@@ -7,6 +7,7 @@
 // =============================================================================
 //! Behavioral assertions independent of a backend's scheduler error type.
 
+use std::iter::repeat_with;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -122,7 +123,7 @@ pub fn assert_backend_contract<B: BatchExecutor>(executor: &B) {
 /// source is safe here because every task fails and admission must stop.
 pub fn assert_failure_policy_contract<B: BatchExecutor>(executor: &B) {
     let completed = AtomicUsize::new(0);
-    let source = std::iter::repeat_with(|| {
+    let source = repeat_with(|| {
         || {
             completed.fetch_add(1, Ordering::Relaxed);
             Err::<(), &'static str>("stop")

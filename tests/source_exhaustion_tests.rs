@@ -7,6 +7,7 @@
 // =============================================================================
 //! Regression tests for the Rayon source exhaustion contract.
 
+use std::iter::from_fn;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -33,7 +34,7 @@ fn test_rayon_preserves_exhausted_source_contract() {
                 .expect("source should be observed as exhausted");
             Err::<(), _>("failed after exhaustion")
         });
-        let source = std::iter::from_fn(move || {
+        let source = from_fn(move || {
             if task.is_some() {
                 task.take()
             } else {
@@ -46,10 +47,14 @@ fn test_rayon_preserves_exhausted_source_contract() {
         let result = executor.execute_with_count(source, expected);
         if expected == 1 {
             let outcome = result.expect("exact source should return an outcome");
-            assert_eq!(outcome.termination(), BatchTermination::Finished);
-            assert_eq!(outcome.completed_count(), 1);
-            assert_eq!(outcome.failed_count(), 1);
-            assert!(!outcome.is_success());
+            assert_eq!(
+                outcome.termination(),
+                BatchTermination::Finished,
+                "an exhausted exact source should finish despite task failure"
+            );
+            assert_eq!(outcome.completed_count(), 1, "the sole task should complete");
+            assert_eq!(outcome.failed_count(), 1, "the sole task should fail");
+            assert!(!outcome.is_success(), "task failure should prevent success");
         } else {
             match result.expect_err("short exhausted source must fail count validation") {
                 BatchExecutionError::CountShortfall {
@@ -58,10 +63,14 @@ fn test_rayon_preserves_exhausted_source_contract() {
                     outcome,
                     ..
                 } => {
-                    assert_eq!((expected, actual), (2, 1));
-                    assert_eq!(outcome.completed_count(), 1);
-                    assert_eq!(outcome.failed_count(), 1);
-                    assert!(!outcome.is_success());
+                    assert_eq!(
+                        (expected, actual),
+                        (2, 1),
+                        "the exhausted source should report one task against two expected"
+                    );
+                    assert_eq!(outcome.completed_count(), 1, "the sole task should complete");
+                    assert_eq!(outcome.failed_count(), 1, "the sole task should fail");
+                    assert!(!outcome.is_success(), "task failure should prevent success");
                 }
                 error => panic!("unexpected error: {error:?}"),
             }

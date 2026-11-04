@@ -43,8 +43,14 @@ fn test_readme_dependency_version_matches_cargo_toml() {
         package_version,
     );
 
-    assert_eq!(readme_en_batch, cargo_qubit_batch);
-    assert_eq!(readme_zh_batch, cargo_qubit_batch);
+    assert_eq!(
+        readme_en_batch, cargo_qubit_batch,
+        "README.md should document the Cargo.toml qubit-batch version"
+    );
+    assert_eq!(
+        readme_zh_batch, cargo_qubit_batch,
+        "README.zh_CN.md should document the Cargo.toml qubit-batch version"
+    );
 }
 
 /// Ensures both user guides declare the current release and install version.
@@ -71,8 +77,14 @@ fn test_user_guide_release_matches_cargo_toml() {
 /// Ensures both README files document the current executor type.
 #[test]
 fn test_readme_mentions_current_executor_type() {
-    assert!(README_EN.contains("RayonBatchExecutor"));
-    assert!(README_ZH.contains("RayonBatchExecutor"));
+    assert!(
+        README_EN.contains("RayonBatchExecutor"),
+        "README.md should document the current RayonBatchExecutor type"
+    );
+    assert!(
+        README_ZH.contains("RayonBatchExecutor"),
+        "README.zh_CN.md should document the current RayonBatchExecutor type"
+    );
 }
 
 /// Extracts the first package version entry from Cargo.toml content.

@@ -17,6 +17,7 @@ use std::any::Any;
 ///
 /// `Some(message)` for `&'static str` and `String` payloads, or `None` for
 /// other payload types.
+#[must_use]
 pub fn panic_payload_message(payload: &(dyn Any + Send)) -> Option<&str> {
     if let Some(message) = payload.downcast_ref::<&'static str>() {
         Some(*message)

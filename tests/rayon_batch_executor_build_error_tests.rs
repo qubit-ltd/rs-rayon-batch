@@ -20,10 +20,14 @@ fn test_rayon_batch_executor_build_error_formats_zero_thread_count() {
         .err()
         .expect("zero thread count should fail");
 
-    assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
+    assert!(
+        matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount),
+        "zero thread count should produce ZeroThreadCount"
+    );
     assert_eq!(
         error.to_string(),
-        "rayon batch executor thread count must be greater than zero"
+        "rayon batch executor thread count must be greater than zero",
+        "ZeroThreadCount should explain the thread count constraint"
     );
 }
 
@@ -35,10 +39,14 @@ fn test_rayon_batch_executor_build_error_formats_zero_stack_size() {
         .err()
         .expect("zero stack size should fail");
 
-    assert!(matches!(error, RayonBatchExecutorBuildError::ZeroStackSize));
+    assert!(
+        matches!(error, RayonBatchExecutorBuildError::ZeroStackSize),
+        "zero stack size should produce ZeroStackSize"
+    );
     assert_eq!(
         error.to_string(),
-        "rayon batch executor worker stack size must be greater than zero"
+        "rayon batch executor worker stack size must be greater than zero",
+        "ZeroStackSize should explain the worker stack size constraint"
     );
 }
 
@@ -47,7 +55,11 @@ fn test_thread_name_prefix_error_formats_and_has_no_source() {
     let error = RayonBatchExecutorBuildError::InvalidThreadNamePrefix;
     assert_eq!(
         error.to_string(),
-        "rayon batch executor thread name prefix must not contain NUL bytes"
+        "rayon batch executor thread name prefix must not contain NUL bytes",
+        "InvalidThreadNamePrefix should explain the NUL byte constraint"
     );
-    assert!(error.source().is_none());
+    assert!(
+        error.source().is_none(),
+        "InvalidThreadNamePrefix should have no underlying source error"
+    );
 }

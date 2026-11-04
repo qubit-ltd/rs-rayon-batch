@@ -7,6 +7,8 @@
 // =============================================================================
 //! Tests for [`RayonBatchExecutor`](qubit_rayon_batch::RayonBatchExecutor).
 
+use std::env::var_os;
+use std::io::Error;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::panic::panic_any;
@@ -50,7 +52,7 @@ fn test_rayon_batch_executor_returns_terminal_progress_report_error() {
     impl Reporter for TerminalFailureReporter {
         fn report(&self, event: &Event) -> Result<(), ReporterError> {
             if matches!(event.phase(), Phase::Succeeded | Phase::Failed) {
-                Err(ReporterError::new(std::io::Error::other(
+                Err(ReporterError::new(Error::other(
                     "synthetic terminal progress report failure",
                 )))
             } else {
@@ -88,6 +90,8 @@ fn test_rayon_batch_executor_returns_terminal_progress_report_error() {
 /// # Panics
 ///
 /// Panics if the event does not carry exactly one counter.
+#[must_use]
+#[inline]
 fn task_counter(event: &Event) -> &MetricSnapshot {
     match event.metrics() {
         [counter] => counter,
@@ -625,7 +629,7 @@ fn test_rayon_batch_executor_reports_count_exceeded_in_parallel_path() {
 #[test]
 fn test_rayon_batch_executor_runs_tasks_concurrently() {
     const CHILD: &str = "QUBIT_RAYON_CONCURRENCY_TEST_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if var_os(CHILD).is_none() {
         run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_rayon_batch_executor_runs_tasks_concurrently",
             CHILD,
@@ -800,7 +804,7 @@ fn test_rayon_batch_executor_reports_failed_progress_for_zero_interval_count_exc
 #[test]
 fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop() {
     const CHILD: &str = "QUBIT_RAYON_SOURCE_PANIC_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if var_os(CHILD).is_none() {
         run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_loop",
             CHILD,
@@ -876,7 +880,7 @@ fn test_rayon_batch_executor_propagates_iterator_panic_without_hanging_progress_
 #[test]
 fn test_runnable_drop_panic_propagates_without_poisoning_executor() {
     const MARKER: &str = "QUBIT_RAYON_RUNNABLE_DROP_PANIC_CHILD";
-    if std::env::var_os(MARKER).is_none() {
+    if var_os(MARKER).is_none() {
         run_with_watchdog(
             "executor::rayon_batch_executor_tests::test_runnable_drop_panic_propagates_without_poisoning_executor",
             MARKER,

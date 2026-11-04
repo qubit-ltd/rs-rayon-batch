@@ -11,13 +11,21 @@ use thiserror::Error;
 /// Error returned when [`crate::RayonBatchExecutorBuilder`] cannot build an
 /// executor.
 ///
+/// Configuration validation failures identify the rejected setting. If Rayon
+/// fails to create the worker pool, [`Self::BuildFailed`] owns the underlying
+/// error and exposes it through [`std::error::Error::source`].
+///
 /// # Examples
 ///
 /// ```
+/// use qubit_rayon_batch::RayonBatchExecutor;
 /// use qubit_rayon_batch::RayonBatchExecutorBuildError;
 ///
-/// let error = RayonBatchExecutorBuildError::ZeroThreadCount;
-/// assert!(matches!(error, RayonBatchExecutorBuildError::ZeroThreadCount));
+/// let result = RayonBatchExecutor::builder().thread_count(0).build();
+/// assert!(matches!(
+///     result,
+///     Err(RayonBatchExecutorBuildError::ZeroThreadCount)
+/// ));
 /// ```
 #[must_use]
 #[derive(Debug, Error)]

@@ -7,6 +7,5 @@
 // =============================================================================
 //! Tests for Rayon batch executors.
 
-mod rayon_batch_executor_build_error_tests;
 mod rayon_batch_executor_builder_tests;
 mod rayon_batch_executor_tests;

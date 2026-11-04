@@ -8,9 +8,13 @@
 //! Callable outputs and thread placement across fallback and parallel paths.
 #![allow(clippy::result_large_err)]
 use std::cell::Cell;
+use std::env;
 use std::io;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::sync::Barrier;
 use std::thread;
+use std::vec::IntoIter;
 
 use qubit_batch::BatchExecutionError;
 use qubit_batch::BatchExecutor;
@@ -22,9 +26,11 @@ use qubit_progress::Reporter;
 use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor as Executor;
 
-mod watchdog;
-use watchdog::run_with_watchdog;
+use self::watchdog::run_with_watchdog;
 
+mod watchdog;
+
+/// Owned output without `Clone`, ensuring execution moves task results intact.
 #[derive(Debug)]
 struct NonClone {
     value: usize,
@@ -104,6 +110,7 @@ fn test_callable_matrix_preserves_values_and_thread_placement() {
     }
 }
 
+/// Separates body panic, destructor panic, and task failure by task index.
 struct DropCallable {
     index: usize,
 }
@@ -201,7 +208,7 @@ struct ReentrantSource {
 }
 impl IntoIterator for ReentrantSource {
     type Item = fn() -> Result<thread::ThreadId, ()>;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
+    type IntoIter = IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         let caller = thread::current().id();
         let nested = self
@@ -219,7 +226,7 @@ impl IntoIterator for ReentrantSource {
 
 #[test]
 fn test_callable_reentrancy_boundaries() {
-    if std::env::var_os("QUBIT_CALLABLE_REENTRANCY_CHILD").is_none() {
+    if env::var_os("QUBIT_CALLABLE_REENTRANCY_CHILD").is_none() {
         run_with_watchdog(
             "test_callable_reentrancy_boundaries",
             "QUBIT_CALLABLE_REENTRANCY_CHILD",
@@ -285,7 +292,7 @@ fn test_callable_reentrancy_boundaries() {
 #[test]
 fn test_callable_conversion_panic_does_not_leak_active_guard() {
     const CHILD: &str = "QUBIT_CALLABLE_CONVERSION_PANIC_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if env::var_os(CHILD).is_none() {
         run_with_watchdog(
             "test_callable_conversion_panic_does_not_leak_active_guard",
             CHILD,
@@ -294,10 +301,11 @@ fn test_callable_conversion_panic_does_not_leak_active_guard() {
         return;
     }
 
+    /// Panics before producing an iterator to exercise execution-guard cleanup.
     struct PanicOnConversion;
     impl IntoIterator for PanicOnConversion {
         type Item = fn() -> Result<thread::ThreadId, ()>;
-        type IntoIter = std::vec::IntoIter<Self::Item>;
+        type IntoIter = IntoIter<Self::Item>;
 
         fn into_iter(self) -> Self::IntoIter {
             panic!("callable source conversion panic");
@@ -309,10 +317,8 @@ fn test_callable_conversion_panic_does_not_leak_active_guard() {
         .sequential_threshold(0)
         .build()
         .expect("two-worker executor must build");
-    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        executor.call_with_count(PanicOnConversion, 2)
-    }))
-    .expect_err("source conversion panic must propagate");
+    let panic = catch_unwind(AssertUnwindSafe(|| executor.call_with_count(PanicOnConversion, 2)))
+        .expect_err("source conversion panic must propagate");
     assert_eq!(
         panic.downcast_ref::<&str>().copied(),
         Some("callable source conversion panic")

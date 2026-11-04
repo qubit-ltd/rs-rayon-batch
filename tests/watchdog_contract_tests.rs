@@ -7,13 +7,15 @@
 // =============================================================================
 //! Contract tests for the shared subprocess watchdog.
 
+use std::env::var;
+use std::env::var_os;
 use std::panic::catch_unwind;
 
 mod watchdog;
-use watchdog::run_with_watchdog;
+use self::watchdog::run_with_watchdog;
 
 #[test]
-fn missing_target_is_rejected() {
+fn test_missing_target_is_rejected() {
     let error = catch_unwind(|| {
         run_with_watchdog(
             "watchdog_target_that_does_not_exist",
@@ -27,25 +29,37 @@ fn missing_target_is_rejected() {
         .map(String::as_str)
         .or_else(|| error.downcast_ref::<&str>().copied())
         .expect("watchdog diagnostic must be text");
-    assert!(message.contains("missing target regression"));
-    assert!(message.contains("watchdog_target_that_does_not_exist"));
+    assert!(
+        message.contains("missing target regression"),
+        "watchdog diagnostic must contain {:?}: {message}",
+        "missing target regression"
+    );
+    assert!(
+        message.contains("watchdog_target_that_does_not_exist"),
+        "watchdog diagnostic must contain {:?}: {message}",
+        "watchdog_target_that_does_not_exist"
+    );
 }
 
 #[test]
-fn valid_target_runs() {
+fn test_valid_target_runs() {
     const MARKER: &str = "QUBIT_WATCHDOG_VALID_CHILD";
-    if std::env::var_os(MARKER).is_some() {
-        assert_eq!(std::env::var(MARKER).expect("marker"), "1");
+    if var_os(MARKER).is_some() {
+        assert_eq!(
+            var(MARKER).expect("watchdog child marker must be valid Unicode"),
+            "1",
+            "watchdog must set the child marker to 1"
+        );
         return;
     }
-    run_with_watchdog("valid_target_runs", MARKER, "valid target regression");
+    run_with_watchdog("test_valid_target_runs", MARKER, "valid target regression");
 }
 
 #[test]
-fn ignored_target_is_executed() {
+fn test_ignored_target_is_executed() {
     let result = catch_unwind(|| {
         run_with_watchdog(
-            "ignored_failure_fixture",
+            "test_ignored_failure_fixture",
             "QUBIT_WATCHDOG_IGNORED_CHILD",
             "ignored target regression",
         );
@@ -56,14 +70,29 @@ fn ignored_target_is_executed() {
         .map(String::as_str)
         .or_else(|| error.downcast_ref::<&str>().copied())
         .expect("watchdog diagnostic must be text");
-    assert!(message.contains("ignored target regression"));
-    assert!(message.contains("ignored_failure_fixture"));
-    assert!(message.contains("test subprocess exited unsuccessfully"));
+    assert!(
+        message.contains("ignored target regression"),
+        "watchdog diagnostic must contain {:?}: {message}",
+        "ignored target regression"
+    );
+    assert!(
+        message.contains("test_ignored_failure_fixture"),
+        "watchdog diagnostic must contain {:?}: {message}",
+        "test_ignored_failure_fixture"
+    );
+    assert!(
+        message.contains("test subprocess exited unsuccessfully"),
+        "watchdog diagnostic must contain {:?}: {message}",
+        "test subprocess exited unsuccessfully"
+    );
 }
 
 #[test]
 #[ignore = "failure fixture selected only by watchdog contract test"]
-fn ignored_failure_fixture() {
-    assert!(std::env::var_os("QUBIT_WATCHDOG_IGNORED_CHILD").is_some());
+fn test_ignored_failure_fixture() {
+    assert!(
+        var_os("QUBIT_WATCHDOG_IGNORED_CHILD").is_some(),
+        "the ignored failure fixture must be launched by the watchdog"
+    );
     panic!("intentional child failure");
 }

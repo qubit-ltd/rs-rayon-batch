@@ -84,7 +84,7 @@ fn register_concurrent<E: BatchExecutor>(criterion: &mut Criterion, label: &str,
                 .expect("setup batch");
             assert_eq!(check.completed_count(), 1024);
             bencher.iter(|| {
-                std::thread::scope(|scope| {
+                thread::scope(|scope| {
                     let mut handles = Vec::with_capacity(callers);
                     for _ in 0..callers {
                         handles.push(scope.spawn(|| {
@@ -166,6 +166,7 @@ struct CountingReporter {
 }
 
 impl Reporter for CountingReporter {
+    #[inline]
     fn is_enabled(&self) -> bool {
         true
     }
@@ -256,7 +257,7 @@ fn benchmarks(criterion: &mut Criterion) {
     register_executor(criterion, "sequential", &sequential);
     for threads in [1usize, 2, 4]
         .into_iter()
-        .filter(|threads| *threads <= std::thread::available_parallelism().map(usize::from).unwrap_or(1))
+        .filter(|threads| *threads <= thread::available_parallelism().map(usize::from).unwrap_or(1))
     {
         let scoped = ParallelBatchExecutor::builder()
             .thread_count(threads)
@@ -279,8 +280,8 @@ fn benchmarks(criterion: &mut Criterion) {
 }
 
 /// Selected gate workloads include a slow producer and skewed worker costs.
-fn register_gate<E: BatchExecutor>(c: &mut Criterion, label: &str, executor: &E) {
-    let mut group = c.benchmark_group(format!("gate-{label}"));
+fn register_gate<E: BatchExecutor>(criterion: &mut Criterion, label: &str, executor: &E) {
+    let mut group = criterion.benchmark_group(format!("gate-{label}"));
     group.sample_size(30);
     group.warm_up_time(Duration::from_millis(200));
     group.measurement_time(Duration::from_millis(500));
@@ -308,7 +309,7 @@ fn register_gate<E: BatchExecutor>(c: &mut Criterion, label: &str, executor: &E)
                 .expect("gate batch")
         };
         assert_eq!(run().completed_count(), 1024);
-        group.bench_function(name, |b| b.iter(|| black_box(run())));
+        group.bench_function(name, |bencher| bencher.iter(|| black_box(run())));
     }
     group.finish();
 }

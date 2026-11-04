@@ -9,6 +9,8 @@
 
 #![allow(clippy::result_large_err)]
 
+use std::env::var_os;
+use std::iter::once;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::sync::Barrier;
@@ -19,8 +21,9 @@ use qubit_batch::BatchTermination;
 use qubit_batch::TaskFailurePolicy;
 use qubit_rayon_batch::RayonBatchExecutor;
 
+use self::watchdog::run_with_watchdog;
+
 mod watchdog;
-use watchdog::run_with_watchdog;
 
 const SAME_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_SAME_POOL_TEST_CHILD";
 const DIFFERENT_POOL_CHILD: &str = "QUBIT_BATCH_NESTED_DIFFERENT_POOL_TEST_CHILD";
@@ -62,16 +65,23 @@ fn run_same_pool_success_case(
             let caller = thread::current().id();
             let nested_outcome = nested_executor
                 .for_each(0..inner_count, |_| {
-                    assert_eq!(thread::current().id(), caller);
+                    assert_eq!(
+                        thread::current().id(),
+                        caller,
+                        "same-pool nesting must stay on the caller thread"
+                    );
                     Ok::<(), &'static str>(())
                 })
                 .expect("same-pool nested execution should return an outcome");
-            assert!(nested_outcome.is_success());
+            assert!(
+                nested_outcome.is_success(),
+                "nested execution must complete successfully"
+            );
             Ok::<(), &'static str>(())
         })
         .expect("same-pool outer execution should return an outcome");
 
-    assert!(outcome.is_success());
+    assert!(outcome.is_success(), "outer execution must complete successfully");
 }
 
 /// Exercises nested failure and panic outcomes on the same Rayon pool.
@@ -101,16 +111,28 @@ fn run_same_pool_failure_cases() {
                     }
                 })
                 .expect("same-pool nested failure should return an outcome");
-            assert_eq!(nested_outcome.completed_count(), 1);
-            assert_eq!(nested_outcome.failed_count(), 1);
+            assert_eq!(
+                nested_outcome.completed_count(),
+                1,
+                "nested execution must stop after its first failure"
+            );
+            assert_eq!(
+                nested_outcome.failed_count(),
+                1,
+                "the first nested task must be recorded as failed"
+            );
             assert_eq!(
                 nested_outcome.termination(),
-                BatchTermination::StoppedByTaskFailurePolicy
+                BatchTermination::StoppedByTaskFailurePolicy,
+                "nested termination must retain the stop-on-first-failure policy"
             );
             Ok::<(), &'static str>(())
         })
         .expect("same-pool outer execution should return an outcome");
-    assert!(stop_outcome.is_success());
+    assert!(
+        stop_outcome.is_success(),
+        "the outer batch must handle the observed nested failure"
+    );
 
     let panic_executor = RayonBatchExecutor::builder()
         .thread_count(2)
@@ -130,17 +152,28 @@ fn run_same_pool_failure_cases() {
                     Ok::<(), &'static str>(())
                 })
                 .expect("same-pool nested panic should return an outcome");
-            assert_eq!(nested_outcome.completed_count(), 16);
-            assert_eq!(nested_outcome.panicked_count(), 1);
+            assert_eq!(
+                nested_outcome.completed_count(),
+                16,
+                "panic capture must allow every nested task to complete"
+            );
+            assert_eq!(
+                nested_outcome.panicked_count(),
+                1,
+                "the nested panic must be recorded exactly once"
+            );
             Ok::<(), &'static str>(())
         })
         .expect("same-pool outer execution should return an outcome");
-    assert!(panic_outcome.is_success());
+    assert!(
+        panic_outcome.is_success(),
+        "the outer batch must handle the captured nested panic"
+    );
 }
 
 #[test]
 fn test_nested_same_pool_completes() {
-    if std::env::var_os(SAME_POOL_CHILD).is_some() {
+    if var_os(SAME_POOL_CHILD).is_some() {
         for (thread_count, sequential_threshold, inner_count, outer_count) in
             [(2, 0, 16, 2), (4, 0, 16, 4), (2, 100, 128, 128)]
         {
@@ -155,7 +188,7 @@ fn test_nested_same_pool_completes() {
 
 #[test]
 fn test_nested_different_pool_remains_parallel() {
-    if std::env::var_os(DIFFERENT_POOL_CHILD).is_some() {
+    if var_os(DIFFERENT_POOL_CHILD).is_some() {
         let outer_executor = RayonBatchExecutor::builder()
             .thread_count(2)
             .sequential_threshold(0)
@@ -174,16 +207,23 @@ fn test_nested_different_pool_remains_parallel() {
                 let caller = thread::current().id();
                 let nested_outcome = inner_executor
                     .for_each(0..16, |_| {
-                        assert_ne!(thread::current().id(), caller);
+                        assert_ne!(
+                            thread::current().id(),
+                            caller,
+                            "parallel execution must use a pool worker"
+                        );
                         Ok::<(), &'static str>(())
                     })
                     .expect("different-pool nested execution should return an outcome");
-                assert!(nested_outcome.is_success());
+                assert!(
+                    nested_outcome.is_success(),
+                    "nested execution must complete successfully"
+                );
                 Ok::<(), &'static str>(())
             })
             .expect("different-pool outer execution should return an outcome");
 
-        assert!(outcome.is_success());
+        assert!(outcome.is_success(), "outer execution must complete successfully");
         return;
     }
 
@@ -197,7 +237,7 @@ fn test_nested_different_pool_remains_parallel() {
 #[test]
 fn test_nested_from_source_producer_completes() {
     const CHILD: &str = "QUBIT_BATCH_NESTED_SOURCE_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if var_os(CHILD).is_none() {
         run_with_watchdog(
             "test_nested_from_source_producer_completes",
             CHILD,
@@ -218,11 +258,15 @@ fn test_nested_from_source_producer_completes() {
             barrier.wait();
             let inner = nested
                 .for_each(0..2, |_| {
-                    assert_eq!(thread::current().id(), producer);
+                    assert_eq!(
+                        thread::current().id(),
+                        producer,
+                        "same-pool source nesting must stay on the producer thread"
+                    );
                     Ok::<(), ()>(())
                 })
                 .expect("source producer nested execution should return");
-            assert!(inner.is_success());
+            assert!(inner.is_success(), "source-producer nesting must complete successfully");
         }
         let barrier = &barrier;
         move || {
@@ -236,14 +280,15 @@ fn test_nested_from_source_producer_completes() {
         executor
             .execute(tasks)
             .expect("outer execution should return")
-            .is_success()
+            .is_success(),
+        "source-producer reentry must leave the outer batch successful"
     );
 }
 
 #[test]
 fn test_source_panic_does_not_leak_active_guard() {
     const CHILD: &str = "QUBIT_RAYON_GUARD_CLEANUP_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if var_os(CHILD).is_none() {
         run_with_watchdog(
             "test_source_panic_does_not_leak_active_guard",
             CHILD,
@@ -268,22 +313,27 @@ fn test_source_panic_does_not_leak_active_guard() {
         .build()
         .expect("the guard cleanup executor should build");
     let result = catch_unwind(AssertUnwindSafe(|| executor.execute_with_count(PanicSource, 2)));
-    assert!(result.is_err());
+    assert!(result.is_err(), "the source panic must unwind out of execution");
     let caller = thread::current().id();
     assert!(
         executor
             .for_each(0..2, |_| {
-                assert_ne!(thread::current().id(), caller);
+                assert_ne!(
+                    thread::current().id(),
+                    caller,
+                    "parallel execution must use a pool worker"
+                );
                 Ok::<(), ()>(())
             })
             .expect("executor should remain usable after source panic")
-            .is_success()
+            .is_success(),
+        "source panic cleanup must preserve successful parallel execution"
     );
 }
 
 #[test]
 fn test_source_producer_can_use_a_different_pool_in_parallel() {
-    if std::env::var_os(DIFFERENT_POOL_SOURCE_CHILD).is_none() {
+    if var_os(DIFFERENT_POOL_SOURCE_CHILD).is_none() {
         run_with_watchdog(
             "test_source_producer_can_use_a_different_pool_in_parallel",
             DIFFERENT_POOL_SOURCE_CHILD,
@@ -307,18 +357,29 @@ fn test_source_producer_can_use_a_different_pool_in_parallel() {
         let rendezvous = Barrier::new(2);
         let nested = inner
             .for_each(0..2, |_| {
-                assert_ne!(thread::current().id(), producer);
+                assert_ne!(
+                    thread::current().id(),
+                    producer,
+                    "different-pool source nesting must use an independent worker"
+                );
                 rendezvous.wait();
                 Ok::<(), ()>(())
             })
             .expect("different pool source execution should return");
-        assert!(nested.is_success());
-        assert_eq!(nested.completed_count(), 2);
+        assert!(
+            nested.is_success(),
+            "different-pool source nesting must complete successfully"
+        );
+        assert_eq!(
+            nested.completed_count(),
+            2,
+            "both different-pool nested tasks must complete"
+        );
         || Ok::<(), ()>(())
     });
     let outcome = outer.execute(tasks).expect("outer execution should return");
-    assert!(outcome.is_success());
-    assert_eq!(outcome.completed_count(), 2);
+    assert!(outcome.is_success(), "outer execution must complete successfully");
+    assert_eq!(outcome.completed_count(), 2, "both source-produced tasks must complete");
 }
 
 #[test]
@@ -332,7 +393,7 @@ fn test_nested_task_failure_is_mapped_to_outer_failure() {
         let nested_executor = executor.clone();
         let outcome = executor
             .execute_with_count(
-                std::iter::once(move || {
+                once(move || {
                     let nested_outcome = nested_executor
                         .execute_with_count(
                             [move || {
@@ -354,12 +415,32 @@ fn test_nested_task_failure_is_mapped_to_outer_failure() {
                 1,
             )
             .expect("outer batch should return an outcome");
-        assert_eq!(outcome.completed_count(), 1);
-        assert_eq!(outcome.is_success(), !fail_inner);
-        assert_eq!(outcome.failed_count(), usize::from(fail_inner));
-        assert_eq!(outcome.panicked_count(), 0);
+        assert_eq!(
+            outcome.completed_count(),
+            1,
+            "the outer task must complete for fail_inner={fail_inner}"
+        );
+        assert_eq!(
+            outcome.is_success(),
+            !fail_inner,
+            "outer success must reflect nested failure for fail_inner={fail_inner}"
+        );
+        assert_eq!(
+            outcome.failed_count(),
+            usize::from(fail_inner),
+            "nested failure must map to exactly one outer failure"
+        );
+        assert_eq!(
+            outcome.panicked_count(),
+            0,
+            "nested task failure must not become an outer panic"
+        );
         if fail_inner {
-            assert_eq!(outcome.failures()[0].index(), 0);
+            assert_eq!(
+                outcome.failures()[0].index(),
+                0,
+                "nested failure must be attributed to the first outer task"
+            );
         }
     }
 }

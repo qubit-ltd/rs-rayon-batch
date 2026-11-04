@@ -106,6 +106,12 @@ impl RayonBatchExecutorBuilder {
 
     /// Sets the progress reporter used by the executor. The default is
     /// [`NoopReporter`].
+    /// The reporter is moved into shared ownership for the executor and its
+    /// clones; it must not borrow non-static data.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `R` - Reporter implementation owned by the executor.
     ///
     /// # Parameters
     ///
@@ -128,7 +134,9 @@ impl RayonBatchExecutorBuilder {
     ///
     /// # Parameters
     ///
-    /// * `reporter` - Shared reporter receiving batch lifecycle callbacks.
+    /// * `reporter` - Shared reporter receiving batch lifecycle callbacks. The
+    ///   supplied shared handle is moved into the builder without cloning the
+    ///   reporter.
     ///
     /// # Returns
     ///

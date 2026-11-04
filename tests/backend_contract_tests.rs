@@ -7,22 +7,24 @@
 // =============================================================================
 //! Applies the same public contract to sequential, scoped, and Rayon backends.
 
+use std::env::var_os;
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-mod internal;
-mod watchdog;
-
-use internal::assert_backend_contract;
-use internal::assert_failure_policy_contract;
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::ParallelBatchExecutor;
 use qubit_batch::SequentialBatchExecutor;
 use qubit_batch::TaskFailurePolicy;
 use qubit_rayon_batch::RayonBatchExecutor;
-use watchdog::run_with_watchdog;
+
+use crate::internal::assert_backend_contract;
+use crate::internal::assert_failure_policy_contract;
+use crate::watchdog::run_with_watchdog;
+
+mod internal;
+mod watchdog;
 
 /// Includes both forced parallel paths and their small-batch fallbacks.
 #[test]
@@ -50,7 +52,7 @@ fn test_backends_share_execution_and_output_contracts() {
 #[test]
 fn test_backends_share_cooperative_failure_policy() {
     const CHILD: &str = "QUBIT_RAYON_BACKEND_FAILURE_POLICY_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if var_os(CHILD).is_none() {
         run_with_watchdog(
             "test_backends_share_cooperative_failure_policy",
             CHILD,
@@ -112,13 +114,25 @@ fn test_rayon_stop_after_failures_preserves_partial_results() {
                 .expect("policy stop should return an outcome");
             assert_eq!(outcome.termination(), BatchTermination::StoppedByTaskFailurePolicy);
             assert_eq!(outcome.completed_count(), executed.load(Ordering::Acquire));
-            assert!(outcome.completed_count() < COUNT);
-            assert!(outcome.failed_count() > 0);
-            assert!(outcome.panicked_count() > 0);
+            assert!(
+                outcome.completed_count() < COUNT,
+                "failure policy must stop before exhausting the source"
+            );
+            assert!(
+                outcome.failed_count() > 0,
+                "task errors must remain in the partial outcome"
+            );
+            assert!(
+                outcome.panicked_count() > 0,
+                "task panics must count toward the failure limit"
+            );
             if sequential {
                 assert_eq!(outcome.failure_count(), limit);
             } else {
-                assert!(outcome.failure_count() >= limit);
+                assert!(
+                    outcome.failure_count() >= limit,
+                    "parallel execution must reach the configured failure limit"
+                );
             }
 
             let executed = AtomicUsize::new(0);
@@ -139,15 +153,30 @@ fn test_rayon_stop_after_failures_preserves_partial_results() {
             let outcome = result.outcome();
             assert_eq!(outcome.termination(), BatchTermination::StoppedByTaskFailurePolicy);
             assert_eq!(outcome.completed_count(), executed.load(Ordering::Acquire));
-            assert!(outcome.completed_count() < COUNT);
-            assert!(outcome.failed_count() > 0);
-            assert!(outcome.panicked_count() > 0);
+            assert!(
+                outcome.completed_count() < COUNT,
+                "failure policy must stop before exhausting the source"
+            );
+            assert!(
+                outcome.failed_count() > 0,
+                "task errors must remain in the partial outcome"
+            );
+            assert!(
+                outcome.panicked_count() > 0,
+                "task panics must count toward the failure limit"
+            );
             assert_eq!(result.outputs().len(), outcome.succeeded_count());
-            assert!(!result.outputs().is_empty());
+            assert!(
+                !result.outputs().is_empty(),
+                "successful outputs before stopping must be preserved"
+            );
             if sequential {
                 assert_eq!(outcome.failure_count(), limit);
             } else {
-                assert!(outcome.failure_count() >= limit);
+                assert!(
+                    outcome.failure_count() >= limit,
+                    "parallel execution must reach the configured failure limit"
+                );
             }
             for output in result.outputs() {
                 assert_eq!(output.index(), *output.value());
@@ -156,14 +185,16 @@ fn test_rayon_stop_after_failures_preserves_partial_results() {
                     !outcome
                         .failures()
                         .iter()
-                        .any(|failure| failure.index() == output.index())
+                        .any(|failure| failure.index() == output.index()),
+                    "successful output must not also appear among failures"
                 );
             }
             assert!(
                 result
                     .outputs()
                     .windows(2)
-                    .all(|pair| pair[0].index() < pair[1].index())
+                    .all(|pair| pair[0].index() < pair[1].index()),
+                "partial outputs must retain source index order"
             );
         }
     }

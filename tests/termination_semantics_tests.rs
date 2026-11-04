@@ -6,6 +6,8 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Failure-policy termination describes source observation, not task success.
+use std::iter::from_fn;
+
 use qubit_batch::BatchExecutor;
 use qubit_batch::BatchTermination;
 use qubit_batch::SequentialBatchExecutor;
@@ -35,7 +37,7 @@ fn test_fallback_does_not_pull_after_failure() {
             .build()
             .expect("valid executor");
         let mut pulls = 0;
-        let source = std::iter::from_fn(|| {
+        let source = from_fn(|| {
             pulls += 1;
             assert_eq!(pulls, 1, "source must not be probed after policy stop");
             Some(|| Err::<(), _>("failed"))

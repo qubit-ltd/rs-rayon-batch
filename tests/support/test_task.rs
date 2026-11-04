@@ -59,6 +59,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A successful test task.
+    #[must_use]
+    #[inline]
     pub const fn succeed() -> Self {
         Self {
             action: TestTaskAction::Succeed,
@@ -74,6 +76,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A counting successful test task.
+    #[must_use]
+    #[inline]
     pub fn count_success(counter: Arc<AtomicUsize>) -> Self {
         Self {
             action: TestTaskAction::CountSuccess { counter },
@@ -89,6 +93,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A failing test task.
+    #[must_use]
+    #[inline]
     pub const fn fail(error: &'static str) -> Self {
         Self {
             action: TestTaskAction::Fail { error },
@@ -104,6 +110,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A panicking test task.
+    #[must_use]
+    #[inline]
     pub const fn panic_string(message: &'static str) -> Self {
         Self {
             action: TestTaskAction::PanicString { message },
@@ -119,6 +127,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A panicking test task.
+    #[must_use]
+    #[inline]
     pub const fn panic_usize(payload: usize) -> Self {
         Self {
             action: TestTaskAction::PanicUsize { payload },
@@ -134,6 +144,8 @@ impl TestTask {
     /// # Returns
     ///
     /// A sleeping successful test task.
+    #[must_use]
+    #[inline]
     pub const fn sleep_success(duration: Duration) -> Self {
         Self {
             action: TestTaskAction::SleepSuccess { duration },

@@ -8,7 +8,9 @@
 //! Runtime exit and admission-contract tests for the Rayon executor.
 #![allow(clippy::result_large_err)]
 
+use std::env::var_os;
 use std::io;
+use std::iter::from_fn;
 use std::sync::Arc;
 use std::sync::Barrier;
 use std::sync::Condvar;
@@ -31,8 +33,9 @@ use qubit_progress::Reporter;
 use qubit_progress::ReporterError;
 use qubit_rayon_batch::RayonBatchExecutor;
 
+use self::watchdog::run_with_watchdog;
+
 mod watchdog;
-use watchdog::run_with_watchdog;
 
 const CONCURRENT_CALLS_CHILD: &str = "QUBIT_BATCH_RAYON_CONCURRENT_CALLS_TEST_CHILD";
 const ADMISSION_WINDOW_CHILD: &str = "QUBIT_BATCH_RAYON_ADMISSION_WINDOW_TEST_CHILD";
@@ -68,7 +71,7 @@ struct TaskGate {
 }
 
 impl TaskGate {
-    /// Blocks until all held tasks are released.
+    /// Blocks until one permit is available or all waiters are released.
     fn wait(&self) {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let mut state = self
@@ -104,12 +107,14 @@ struct AdmissionWindowState {
 
 impl AdmissionWindowState {
     /// Records one generated task and preserves its unfinished-window peak.
+    #[inline]
     fn observe_task(&mut self) {
         self.observed += 1;
         self.max_unfinished = self.max_unfinished.max(self.observed - self.completed);
     }
 
     /// Records a task reaching its normal return point after the gate.
+    #[inline]
     fn complete_task(&mut self) {
         self.completed += 1;
     }
@@ -251,7 +256,7 @@ impl Drop for ObservedTaskSource {
 
 #[test]
 fn test_cloned_executor_concurrent_calls_remain_independent() {
-    if std::env::var_os(CONCURRENT_CALLS_CHILD).is_none() {
+    if var_os(CONCURRENT_CALLS_CHILD).is_none() {
         run_with_watchdog(
             "test_cloned_executor_concurrent_calls_remain_independent",
             CONCURRENT_CALLS_CHILD,
@@ -351,7 +356,7 @@ fn test_cloned_executor_concurrent_calls_remain_independent() {
 
 #[test]
 fn test_blocked_workers_bound_unfinished_admission_window() {
-    if std::env::var_os(ADMISSION_WINDOW_CHILD).is_none() {
+    if var_os(ADMISSION_WINDOW_CHILD).is_none() {
         run_with_watchdog(
             "test_blocked_workers_bound_unfinished_admission_window",
             ADMISSION_WINDOW_CHILD,
@@ -430,7 +435,7 @@ fn test_blocked_workers_bound_unfinished_admission_window() {
 
 #[test]
 fn test_running_reporter_failure_drains_accepted_tasks() {
-    if std::env::var_os(REPORTER_FAILURE_CHILD).is_none() {
+    if var_os(REPORTER_FAILURE_CHILD).is_none() {
         run_with_watchdog(
             "test_running_reporter_failure_drains_accepted_tasks",
             REPORTER_FAILURE_CHILD,
@@ -550,7 +555,7 @@ fn test_running_reporter_failure_drains_accepted_tasks() {
 
 #[test]
 fn test_paused_source_releases_shared_pool_after_resume() {
-    if std::env::var_os(PAUSED_SOURCE_CHILD).is_none() {
+    if var_os(PAUSED_SOURCE_CHILD).is_none() {
         run_with_watchdog(
             "test_paused_source_releases_shared_pool_after_resume",
             PAUSED_SOURCE_CHILD,
@@ -591,7 +596,7 @@ fn test_paused_source_releases_shared_pool_after_resume() {
                     Ok::<(), ()>(())
                 }
             });
-            let exhaustion = std::iter::from_fn(move || {
+            let exhaustion = from_fn(move || {
                 paused_sender.send(()).expect("source pause is observed");
                 resume_receiver
                     .recv_timeout(WATCHDOG_TIMEOUT)

@@ -7,6 +7,8 @@
 // =============================================================================
 //! Manual, process-isolated diagnostics for cyclic cross-pool calls.
 
+use std::env::current_exe;
+use std::env::var_os;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -24,7 +26,7 @@ use qubit_rayon_batch::RayonBatchExecutor;
 #[ignore = "manual diagnostic: may terminate stalled subprocesses"]
 fn test_cross_pool_cycle_probe() {
     const MARKER: &str = "QUBIT_RAYON_CYCLE_PROBE";
-    if let Some(case) = std::env::var_os(MARKER) {
+    if let Some(case) = var_os(MARKER) {
         let case = case.to_str().expect("ASCII case");
         let (workers, items) = case.split_once(':').expect("workers:items");
         let workers: usize = workers.parse().expect("worker count");
@@ -51,13 +53,19 @@ fn test_cross_pool_cycle_probe() {
                     b_entered.wait();
                 }
                 let nested = a.for_each(0..items, |_| Ok::<(), ()>(()));
-                assert!(nested.expect("nested A outcome").is_success());
+                assert!(
+                    nested.expect("nested A outcome").is_success(),
+                    "nested A batch must succeed",
+                );
                 Ok::<(), ()>(())
             });
-            assert!(inner.expect("B outcome").is_success());
+            assert!(inner.expect("B outcome").is_success(), "B batch must succeed");
             Ok::<(), ()>(())
         });
-        assert!(result.expect("outer A outcome").is_success());
+        assert!(
+            result.expect("outer A outcome").is_success(),
+            "outer A batch must succeed",
+        );
         eprintln!("RB003 COMPLETED");
         return;
     }
@@ -65,7 +73,7 @@ fn test_cross_pool_cycle_probe() {
     for workers in [2usize, 4] {
         for round in 1..=3 {
             for items in [1usize, 32] {
-                let mut child = Command::new(std::env::current_exe().expect("test executable"))
+                let mut child = Command::new(current_exe().expect("test executable"))
                     .args(["--ignored", "--exact", "test_cross_pool_cycle_probe", "--nocapture"])
                     .env(MARKER, format!("{workers}:{items}"))
                     .stdin(Stdio::null())

@@ -7,6 +7,7 @@
 // =============================================================================
 use std::panic::panic_any;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use qubit_progress::Event;
 use qubit_progress::Phase;
@@ -37,6 +38,7 @@ impl RecordingProgressReporter {
     /// # Returns
     ///
     /// A recording reporter with no stored events.
+    #[must_use]
     #[inline]
     pub fn new() -> Self {
         Self::default()
@@ -47,11 +49,9 @@ impl RecordingProgressReporter {
     /// # Returns
     ///
     /// A cloned list of progress events in callback order.
+    #[must_use]
     pub fn events(&self) -> Vec<Event> {
-        self.events
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.events.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 }
 
@@ -59,7 +59,7 @@ impl Reporter for RecordingProgressReporter {
     fn report(&self, event: &Event) -> Result<(), ReporterError> {
         self.events
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(event.clone());
         Ok(())
     }
@@ -85,6 +85,8 @@ impl PanickingProgressReporter {
     /// # Returns
     ///
     /// A panicking progress reporter.
+    #[must_use]
+    #[inline]
     pub const fn new(phase: ProgressPanicPhase, message: &'static str) -> Self {
         Self { phase, message }
     }

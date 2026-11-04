@@ -18,6 +18,11 @@ thread_local! {
 }
 
 /// Marks a Rayon pool as active on the current thread for one call.
+///
+/// Dropping the guard removes its registration, including during unwinding.
+/// The guard cannot be sent or shared across threads. It stores only the pool's
+/// address and does not retain ownership of the pool; callers must keep the
+/// pool alive until the guard is dropped so that its identity remains valid.
 pub(crate) struct ActiveBatchGuard {
     /// Identity of the Rayon pool registered by this guard.
     pool_id: usize,
@@ -39,6 +44,13 @@ impl ActiveBatchGuard {
     ///
     /// A guard that removes the registration when dropped, or `None` on
     /// reentry.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the thread-local registry is unavailable during thread
+    /// teardown or is already borrowed. Inserting a new registration may
+    /// allocate memory.
+    #[must_use = "keep the guard alive until batch execution finishes"]
     pub(crate) fn enter(pool: &Arc<ThreadPool>) -> Option<Self> {
         let pool_id = Arc::as_ptr(pool) as usize;
         ACTIVE_POOLS.with(|active| {
@@ -58,6 +70,11 @@ impl ActiveBatchGuard {
 
 impl Drop for ActiveBatchGuard {
     /// Removes this pool from the current thread's active set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the thread-local registry is unavailable during thread
+    /// teardown or is already borrowed.
     fn drop(&mut self) {
         ACTIVE_POOLS.with(|active| {
             let mut active = active.borrow_mut();

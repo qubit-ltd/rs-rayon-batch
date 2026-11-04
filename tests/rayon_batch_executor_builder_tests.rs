@@ -14,6 +14,10 @@ fn test_builder_uses_configured_thread_count() {
     let executor = RayonBatchExecutor::builder()
         .thread_count(1)
         .build()
-        .expect("default configuration should build");
-    assert_eq!(executor.thread_count(), 1);
+        .expect("configuration with one worker should build");
+    assert_eq!(
+        executor.thread_count(),
+        1,
+        "the executor should retain the configured worker count"
+    );
 }

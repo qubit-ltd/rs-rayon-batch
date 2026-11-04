@@ -94,17 +94,6 @@ impl RayonBatchExecutor {
     /// Default sequential fallback threshold.
     pub const DEFAULT_SEQUENTIAL_THRESHOLD: usize = crate::constants::DEFAULT_SEQUENTIAL_THRESHOLD;
 
-    /// Returns the default Rayon worker-thread count used by the builder.
-    ///
-    /// # Returns
-    ///
-    /// The available CPU parallelism, or `1` if it cannot be detected.
-    #[must_use]
-    #[inline]
-    pub fn default_thread_count() -> usize {
-        thread::available_parallelism().map(usize::from).unwrap_or(1)
-    }
-
     /// Creates a builder for configuring a Rayon batch executor.
     ///
     /// # Returns
@@ -151,6 +140,7 @@ impl RayonBatchExecutor {
     /// # Returns
     ///
     /// A new [`RayonBatchExecutor`] using the supplied pool and configuration.
+    #[must_use]
     #[inline]
     pub(crate) fn new_with_rayon(pool: RayonThreadPool, builder: RayonBatchExecutorBuilder) -> Self {
         Self {
@@ -160,6 +150,33 @@ impl RayonBatchExecutor {
             coordinator: ParallelBatchExecutionCoordinator::new(builder.reporter, builder.report_interval),
             task_failure_policy: builder.task_failure_policy,
         }
+    }
+
+    /// Creates the sequential fallback with this executor's batch settings.
+    ///
+    /// # Returns
+    ///
+    /// A sequential executor sharing the reporter, interval, and failure
+    /// policy.
+    #[must_use]
+    #[inline]
+    fn sequential_executor(&self) -> SequentialBatchExecutor {
+        SequentialBatchExecutor::builder()
+            .report_interval(self.coordinator.report_interval())
+            .reporter_arc(Arc::clone(self.coordinator.reporter()))
+            .task_failure_policy(self.task_failure_policy)
+            .build()
+    }
+
+    /// Returns the default Rayon worker-thread count used by the builder.
+    ///
+    /// # Returns
+    ///
+    /// The available CPU parallelism, or `1` if it cannot be detected.
+    #[must_use]
+    #[inline]
+    pub fn default_thread_count() -> usize {
+        thread::available_parallelism().map(usize::from).unwrap_or(1)
     }
 
     /// Returns the configured Rayon worker-thread count.
@@ -177,17 +194,6 @@ impl RayonBatchExecutor {
         self.thread_count
     }
 
-    /// Bounds scheduler receivers and queue capacity by the actual Rayon pool.
-    ///
-    /// # Parameters
-    /// * `count` - Declared number of tasks in this batch.
-    ///
-    /// # Returns
-    /// The smaller of the actual pool capacity and the declared task count.
-    fn worker_count(&self, count: usize) -> usize {
-        self.pool.current_num_threads().min(count)
-    }
-
     /// Returns the configured sequential fallback threshold.
     ///
     /// # Returns
@@ -200,6 +206,10 @@ impl RayonBatchExecutor {
     }
 
     /// Returns the configured task-failure policy.
+    ///
+    /// # Returns
+    ///
+    /// The policy controlling admission after task errors or captured panics.
     #[must_use = "inspect the configured task-failure policy"]
     #[inline]
     pub const fn task_failure_policy(&self) -> TaskFailurePolicy {
@@ -234,19 +244,19 @@ impl RayonBatchExecutor {
         self.coordinator.reporter()
     }
 
-    /// Creates the sequential fallback with this executor's batch settings.
+    /// Bounds scheduler receivers and queue capacity by the actual Rayon pool.
+    ///
+    /// # Parameters
+    ///
+    /// * `count` - Declared number of tasks in this batch.
     ///
     /// # Returns
     ///
-    /// A sequential executor sharing the reporter, interval, and failure
-    /// policy.
+    /// The smaller of the actual pool capacity and the declared task count.
+    #[must_use]
     #[inline]
-    fn sequential_executor(&self) -> SequentialBatchExecutor {
-        SequentialBatchExecutor::builder()
-            .report_interval(self.coordinator.report_interval())
-            .reporter_arc(Arc::clone(self.coordinator.reporter()))
-            .task_failure_policy(self.task_failure_policy)
-            .build()
+    fn worker_count(&self, count: usize) -> usize {
+        self.pool.current_num_threads().min(count)
     }
 }
 
@@ -276,6 +286,13 @@ impl BatchExecutor for RayonBatchExecutor {
     /// Ordinary calls use Rayon workers. Small batches, single-worker
     /// executors, and same-pool worker or source-producer reentry collect
     /// outputs sequentially on the calling thread.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C` - Callable task moved to a worker or run on the calling thread.
+    /// * `R` - Successful output transferable between threads.
+    /// * `E` - Task error transferable between threads.
+    /// * `I` - Source consumed once to produce the callables.
     ///
     /// # Parameters
     ///
@@ -343,6 +360,12 @@ impl BatchExecutor for RayonBatchExecutor {
     /// Ordinary calls use Rayon workers. Small batches, single-worker
     /// executors, and same-pool worker or source-producer reentry run
     /// tasks sequentially on the calling thread.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - Runnable task moved to a worker or run on the calling thread.
+    /// * `E` - Task error transferable between threads.
+    /// * `I` - Source consumed once to produce the tasks.
     ///
     /// # Parameters
     ///
@@ -431,6 +454,11 @@ impl BatchExecutor for RayonBatchExecutor {
 
 /// Runs Rayon work items until the producer closes the work channel.
 ///
+/// # Type Parameters
+///
+/// * `T` - Runnable task owned by a received work item.
+/// * `E` - Task error transferable between worker threads.
+///
 /// # Parameters
 ///
 /// * `work_receiver` - Clone of the crossbeam work receiver. Crossbeam clones
@@ -462,9 +490,13 @@ mod tests {
         let pool = ThreadPoolBuilder::new().num_threads(2).build().expect("small pool");
         let builder = RayonBatchExecutor::builder().thread_count(usize::MAX);
         let executor = RayonBatchExecutor::new_with_rayon(pool, builder);
-        assert_eq!(executor.thread_count(), usize::MAX);
+        assert_eq!(executor.thread_count(), usize::MAX, "configured count is preserved");
         for (count, expected) in [(0, 0), (1, 1), (2, 2), (3, 2), (usize::MAX, 2)] {
-            assert_eq!(executor.worker_count(count), expected);
+            assert_eq!(
+                executor.worker_count(count),
+                expected,
+                "pool capacity bounds {count} tasks"
+            );
         }
     }
 }
