@@ -56,7 +56,7 @@ O(S + F)，还要加上值和错误自身的堆内存开销。该 API 不是流�
 
 ```toml
 [dependencies]
-qubit-batch = "0.14"
+qubit-batch = "^0.14"
 qubit-rayon-batch = "0.9"
 ```
 
