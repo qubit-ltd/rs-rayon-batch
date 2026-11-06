@@ -279,6 +279,7 @@ impl Default for RayonBatchExecutor {
 }
 
 impl BatchExecutor for RayonBatchExecutor {
+    /// Error returned when Rayon cannot complete the scheduled batch work.
     type SchedulerError = RayonBatchScheduleError;
 
     /// Executes counted callables and retains indexed successful outputs.
