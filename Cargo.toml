@@ -1,6 +1,6 @@
 [package]
 name = "qubit-rayon-batch"
-version = "0.9.1"
+version = "0.9.2"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]
