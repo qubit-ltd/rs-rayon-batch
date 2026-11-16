@@ -55,9 +55,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.11.1"
+version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ff2a8126fff0f8c839080d619675a585e61720bb12d2baceae45769fd66f155"
+checksum = "33ef9e3e8154a45c7a95cff4c1299702106ad94062d7bb85fdc5d3a5afd91d45"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -295,9 +295,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-atomic"
-version = "0.17.9"
+version = "0.17.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "847020085c1ae09a7861859d749637429d75a0b76bcd73e00b78d3593f54eba3"
+checksum = "b4b81fd24e2179ee885b78b672aacc27c9f62f41092ef1b258048d9743efe246"
 dependencies = [
  "arc-swap",
  "portable-atomic",
@@ -305,9 +305,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-batch"
-version = "0.14.5"
+version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3baff6c73f994c80e066e469667267348c2ec4e4eff0925d215557769762301"
+checksum = "e83f8118f3b26e9d2cedecf46e3ab8c33438e385451e2f89cbc949e8b24de20f"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -319,28 +319,28 @@ dependencies = [
 
 [[package]]
 name = "qubit-fast-cas"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b21a7f235bd77aa62de91190d043128e9f561ac48268c2ad36899f7ee4d7181"
+checksum = "f9d0addbf59ca007f40e3adf0d9faef30b946f42bfb0a59b1b4276920a0bfa54"
 
 [[package]]
 name = "qubit-function"
-version = "0.18.6"
+version = "0.18.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f16834da1c2ae73cb26538a3473ded054e3fef1bdd65803eba1655c506b29e22"
+checksum = "7227ce653698731c28e1f13cb783286ef0320e3ae9ecf157061d7e007bea0be2"
 
 [[package]]
 name = "qubit-progress"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202f67d8160e4e1ade708d39d77d88b1247b460871492082018eda3c7e440e0a"
+checksum = "0c0b2257ae96447ba5c8a06536d8611c090dd1bcf7c6ee5782badc279ca2a56b"
 dependencies = [
  "qubit-fast-cas",
 ]
 
 [[package]]
 name = "qubit-rayon-batch"
-version = "0.9.3"
+version = "0.9.4"
 dependencies = [
  "criterion",
  "crossbeam-channel",
